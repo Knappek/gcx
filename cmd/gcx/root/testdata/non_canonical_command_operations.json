@@ -48,7 +48,6 @@
   "gcx datasources tempo diff",
   "gcx docs outline",
   "gcx frontend apps apply-sourcemap",
-  "gcx frontend apps inspect-replay-segment",
   "gcx instrumentation check",
   "gcx instrumentation clusters apps configure",
   "gcx instrumentation clusters apps remove",
