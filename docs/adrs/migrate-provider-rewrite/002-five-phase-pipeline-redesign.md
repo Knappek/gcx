@@ -1,7 +1,8 @@
 # Five-Phase Pipeline Redesign for /migrate-provider
 
 **Created**: 2026-03-27
-**Status**: accepted
+**Status**: deprecated
+**Deprecated**: The `migrate-provider` skill was removed from the repository; this ADR is kept as history.
 **Bead**: TBD
 **Supersedes**: [001-three-stage-blackbox-verification](001-three-stage-blackbox-verification.md)
 
