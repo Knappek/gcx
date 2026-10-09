@@ -9,8 +9,8 @@ for unresolved API facts and the
 
 ## Resolve implementation details
 
-
-Answer each decision from the guide, grounded in research findings:
+Answer each decision from the guide, grounded in the issue or proposal and the
+API facts you verified:
 
 1. **Auth strategy** — reuse Grafana token or separate credentials?
 2. **Client type** — plugin API, K8s API, or external service?
@@ -22,30 +22,28 @@ Answer each decision from the guide, grounded in research findings:
 4. **Envelope mapping** *(adapter-backed resources only)* — how do API objects map to the K8s envelope?
 5. **Command surface** — which verbs are actually implemented (CRUD subset + beyond-CRUD)?
 6. **Package layout** — flat or subpackaged?
-7. **Staging** — how to break into shippable stages?
+7. **Staging** — how to break the work into reviewable PRs?
 
-For beyond-CRUD commands: brainstorm based on real APIs found in research
+For beyond-CRUD commands: brainstorm based on the real APIs you verified
 (status, timeline, validation, etc.). Present options to user — include
 "CRUD only for now" as an option.
 
-
 Record decisions in the existing issue, RFC or PR-scoped OpenSpec change under
-[CONTRIBUTING](../../../../CONTRIBUTING.md#contribution-workflow). Novel architecture
+[CONTRIBUTING](../../../../CONTRIBUTING.md#new-commands-need-an-issue-first). Novel architecture
 decisions follow repository ADR conventions; routine choices matching precedent
 need no separate document.
 
 ## Plan smoke verification
 
-
 Prepare smoke test commands using test values for the implemented scope. Keep
 them in the existing plan or working notes and report their results in the PR.
 
-Cover only the verbs the stage actually implements — do not smoke-test CRUD
+Cover only the verbs this change actually implements — do not smoke-test CRUD
 verbs the provider doesn't expose. Destructive commands use `--force`
 (never `--yes`; see `docs/design/safety.md` §3.2). Mark in the plan which
 commands mutate state and their intended test target so existing authorization
 can be checked before running them.
-Example pattern (replace with real product/resource names in actual spec):
+Example pattern (replace with the real product and resource names):
 ```bash
 # Provider appears in list
 bin/gcx providers list | grep {name}
@@ -53,7 +51,7 @@ bin/gcx providers list | grep {name}
 # Config secrets are redacted
 bin/gcx config view | grep {name}
 
-# Implemented operations work (subset per stage)
+# Implemented operations work (only the verbs this change implements)
 bin/gcx {name} {resource} list
 bin/gcx {name} {resource} get <test-id>
 bin/gcx {name} {resource} delete <test-id> --force
@@ -62,9 +60,7 @@ bin/gcx {name} {resource} delete <test-id> --force
 bin/gcx resources get {alias}
 ```
 
-
 ## Implement
-
 
 > **Guide**: `docs/reference/provider-guide.md` (Steps 1–7)
 > **UX Guide**: `docs/design/`
@@ -88,9 +84,7 @@ Summary of the key steps:
 - Adapter-backed resources must strip server-generated fields on Create/Update
 - Declare adapter-backed resource types with `adapter.Resource[T]`; see the SLO reference in `internal/providers/slo/definitions/resource_adapter.go`.
 
-
 ## Verify
-
 
 ### Run Smoke Tests
 

@@ -9,7 +9,6 @@ unverified probes in the existing planning record. Read
 
 ## Implement
 
-
 ### Step 1: Query Client
 
 Create `internal/query/{kind}/` with `client.go` and `types.go`. Add a
@@ -297,7 +296,7 @@ return dsquery.EncodeAndHandleExplore(cmd, func() error {
   result to `Expr`, so the link carries a `LIMIT` the user never typed.
 - **Mention both flags** in the command's `Long` and `Example` text.
 - **A unit test cannot prove the URL is right.** Verify each new URL in a
-  browser during Stage 3.
+  browser during self-review.
 
 Reuse these helpers — do not write new ones:
 

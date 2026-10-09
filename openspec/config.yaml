@@ -4,6 +4,10 @@ context: |
   Domain terms: read docs/glossary/README.md first, then load only the glossary context files this change touches.
   Use the glossary's terms and avoid the words it lists under _Avoid_.
   Define new terms in the change or RFC; when the change ships, add them to the matching docs/glossary/ context file.
+  gcx is a public repository; keep internal information out of artifacts.
+  One OpenSpec change covers one pull request; link the GitHub issue and any RFC under docs/rfcs/ that it implements.
+  Bug fixes and maintenance changes usually don't need an OpenSpec change.
+  Follow CONSTITUTION.md (invariants), DESIGN.md (CLI UX) and ARCHITECTURE.md.
 
 # Project context (optional)
 # Add only constraints that should guide OpenSpec artifacts and workflows.

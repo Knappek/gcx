@@ -12,7 +12,6 @@ current build; user-facing examples say `gcx`.
 
 ## Placement and readiness
 
-
 > Detail: [placement-and-readiness.md](placement-and-readiness.md)
 
 Inventory the tree first — a new leaf competes for every agent's attention:
@@ -52,7 +51,7 @@ a document):
 Investigate missing facts; ask a targeted question when a consequential choice remains unresolved.
 
 **What happens next depends on the readiness outcome.** Two of the four are
-terminal — Place is the whole deliverable and there is nothing to implement:
+terminal — the placement section is the whole deliverable and there is nothing to implement:
 
 | Readiness outcome | Next |
 |---|---|
@@ -66,9 +65,7 @@ Do not invent a contract or an implementation for a terminal outcome. Concluding
 "not gcx" and then building anyway is the expensive version of getting placement
 wrong.
 
-
 ## Command contract and implementation
-
 
 > Detail: [contract-and-tests.md](contract-and-tests.md)
 
@@ -91,7 +88,7 @@ rg -n "ConfirmDestructive" internal/providers/
 
 The rules that are enforced in review but written almost nowhere else — `Args:`
 validators, explicitly-empty flags, sibling validation symmetry, dead codec
-paths — are the same checks the review mode runs, so they live once, in
+paths — are the same checks the self-review step runs, so they live once, in
 [self-review.md](self-review.md). Read it now, not after
 you write the code.
 
@@ -103,9 +100,7 @@ Close by reading your command back the way agents see it — `bin/gcx help-tree`
 `bin/gcx commands --flat -o json` — and re-check the routing metadata against
 what renders.
 
-
 ## Rules at their real strength
-
 
 Never state proposed or conventional guidance as law.
 

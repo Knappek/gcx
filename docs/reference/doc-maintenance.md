@@ -22,8 +22,9 @@
 ### Adding or Updating an RFC
 
 Keep engineering proposals in `docs/rfcs/NNN-title.md` and maintain their entries in
-[the RFC index](../rfcs/README.md). Use the repository-local `create-rfc` and
-`update-rfc` skills for proposal development and evidence-based reconciliation.
+[the RFC index](../rfcs/README.md). Use the repository-local `create-rfc`, `review-rfc` and
+`update-rfc` skills for proposal development, review before sharing, and
+evidence-based reconciliation.
 A proposal alone does not change the implemented architecture or require an ADR
 index entry; update architecture documentation when the corresponding design is
 implemented. Keep proposed terms in the RFC; when a feature ships, move its

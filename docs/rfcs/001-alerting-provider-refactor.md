@@ -189,12 +189,21 @@ Notifications would prefer `notifications.alerting.grafana.app/v1beta1` where it
 
 ## Unresolved questions
 
+**Design decisions**
+
+- **Command migration:** complete the old-to-new command table and named provisioning export syntax, checking that wrappers preserve behavior throughout release N.
+
+**Technical validation (acceptance checks).** The design stays unproven until these pass.
+
 - **Fallback registration:** demonstrate that a legacy-only server can expose the supported resource descriptors and schemas to generic discovery without duplicate native registration.
 - **Capability evidence:** identify reliable existing discovery/configuration signals for early unsupported results, and test that inconclusive domain feature evidence does not block a request or turn an ambiguous 404 into a feature diagnosis. Tests should distinguish API absence from forbidden requests, missing objects and transient errors, and verify that unsupported named-tree operations never change the default tree and that the requested operation reaches the selected backend without probes or cross-backend retry and its response is preserved.
 - **Version coverage:** exercise the source-derived matrix on representative 12.x and newer OSS/Enterprise builds and Cloud configurations, including legacy-only targets, registered APIs with named trees disabled, and enabled native capabilities; verify payload equivalence, pagination, and collection operations. Registration alone is insufficient proof.
 - **Path parity:** compare dedicated commands and resource operations for identity, permissions, provenance, stale-version conflicts, and nonmutating preview. A disposable-resource test should update one named tree without changing another or the default, then verify rule assignment separately.
 - **Cross-stack transfer:** verify explicit credentials, same-integration secret retention, destination updates, and retries after partial failures, with bulk push keeping its existing partial-success and user-retry behavior.
-- **Command migration:** complete the old-to-new command table and named provisioning export syntax, checking that wrappers preserve behavior throughout release N.
+
+## Future possibilities
+
+A unified native/REST declaration model could later remove the remaining per-resource wiring, and dependency ordering or automatic reference resolution could automate more of a cross-stack transfer. Neither is part of this proposal.
 
 ## Terminology
 

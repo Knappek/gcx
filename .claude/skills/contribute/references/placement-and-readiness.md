@@ -167,7 +167,7 @@ and do not read its absence as a negative result — a product that is plan-gate
 disabled on the configured stack, or served in a different tenant looks identical
 to a product that has no API at all. Record the exact probe a reviewer should run
 as `UNVERIFIED` in the placement section, and carry it into the
-`Unverified assumptions` line of the final summary.
+`Unverified assumptions` field of the contribute skill's contribution summary.
 
 Outcome (one of four, written down):
 
@@ -190,8 +190,8 @@ Outcome (one of four, written down):
 
 ## 6. The placement section
 
-Four bullets, shown in your plan and carried forward to any sibling skill you
-hand off to. Not a document, and not something to wait for approval on — if the
+Four bullets, shown in your plan and carried into the issue or proposal and the
+`Placement` field of the contribution summary. Not a document, and not something to wait for approval on — if the
 repository, the governing docs and a probe settle it, it is settled.
 
 ```text

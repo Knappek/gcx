@@ -22,7 +22,7 @@ To build the Grafana.com-style docs locally:
 - **[ARCHITECTURE.md](../ARCHITECTURE.md)** — Architecture overview, pipeline diagrams, ADR index
 - **[DESIGN.md](../DESIGN.md)** — CLI UX design: command grammar, output model, taste rules
 - **[CONTRIBUTING.md](../CONTRIBUTING.md)** — Dev setup, testing, contribution workflow
-- **[Engineering RFCs](rfcs/README.md)** — Proposals, tradeoffs, and validation criteria
+- **[Engineering RFCs](rfcs/README.md)** — Proposals, tradeoffs, and open questions
 - **[Architecture](architecture/README.md)** — Deep-dive architecture docs per domain
 
 ## Directory Layout
@@ -36,7 +36,6 @@ docs/
 ├── reference/        # Evergreen tool/API docs, auto-generated CLI reference
 ├── guides/           # User-facing how-to guides
 ├── research/         # Point-in-time research reports
-├── specs/            # Ephemeral spec packages (cleaned after merge)
 ├── _templates/       # Templates for ADRs and research reports
 └── assets/           # Images and static assets
 ```
@@ -50,9 +49,9 @@ Available in [`_templates/`](_templates/):
 | `adr.md` | Architecture Decision Records |
 | `research.md` | Research reports |
 
-Feature, bugfix and refactor plans are OpenSpec changes under
-[`openspec/changes/`](../openspec/), one per PR. Work with enough scope to need its own
-design starts with an [RFC](rfcs/README.md); most PRs don't need one.
+When a change needs a tracked implementation plan, use an OpenSpec change under
+[`openspec/changes/`](../openspec/changes/), one change per PR. Work with enough scope to
+need its own design starts with an [RFC](rfcs/README.md); most PRs don't need one.
 
 ### Conventions
 
