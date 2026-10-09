@@ -11,7 +11,7 @@ RFCs propose engineering changes for review: the problem, user experience, techn
 
 ## Authoring and maintenance
 
-Follow the [contribution workflow](../../CONTRIBUTING.md#contribution-workflow) to determine whether an RFC is needed and obtain the applicable maintainer agreement. An RFC records design and scope decisions for implementation PRs; those PRs may use [OpenSpec](../../openspec/) when they need a tracked implementation plan. Start agent-assisted contribution work with [`contribute`](../../.claude/skills/contribute/SKILL.md).
+An RFC is needed when design tradeoffs or scope need agreement before implementation; the maintainer who agrees with the feature proposal says so (see [CONTRIBUTING.md](../../CONTRIBUTING.md#new-commands-need-an-issue-first)). An RFC records design and scope decisions for implementation PRs; those PRs may use [OpenSpec](../../openspec/) when they need a tracked implementation plan. Start agent-assisted contribution work with [`contribute`](../../.claude/skills/contribute/SKILL.md).
 
 Use `NNN-title.md`, choosing the next unused number starting at `001`, title the document `RFC NNN: <Title>`, and add it to this index. Record status in the index rather than in the RFC. Keep later revisions in the same file. Define proposed terms in the RFC. When a feature ships, move its terms to the [glossary](../glossary/README.md) and link to them from the RFC instead of repeating them.
 

@@ -7,9 +7,9 @@ description: Turn an idea or rough notes into a reviewable gcx feature proposal 
 
 Produce one proposal that a reader with no access to the conversation can understand and assess. Use the common [Feature proposal form](../../../.github/ISSUE_TEMPLATE/2-feature-proposal.yml) for requests, improvements and proposed commands. This skill ends with a reviewable draft or an authorized, filed issue.
 
-Read the [contribution workflow](../../../CONTRIBUTING.md#contribution-workflow) for when a proposal is needed and what follows acceptance. Use [`contribute`](../contribute/SKILL.md) when selecting the contribution route or preparing implementation. Follow that policy; a user may also request a proposal draft for work whose route does not require one.
+Read [CONTRIBUTING.md](../../../CONTRIBUTING.md#new-commands-need-an-issue-first) for when a proposal is needed and what follows agreement. Use [`contribute`](../contribute/SKILL.md) when selecting the contribution route or preparing implementation. Follow that policy; a user may also request a proposal draft for work whose route does not require one.
 
-The repository is public. Follow the anonymization rules in the GitHub Issues section of [CLAUDE.md](../../../CLAUDE.md). Use public evidence or independently developed material suitable for public review. Keep restricted research outside the checkout; removing links or attribution does not make internal findings publishable.
+The repository is public. Follow the anonymization rules in the GitHub Issues section of [AGENTS.md](../../../AGENTS.md). Use public evidence or independently developed material suitable for public review. Keep restricted research outside the checkout; removing links or attribution does not make internal findings publishable.
 
 ## Ground the idea
 
@@ -42,7 +42,7 @@ Cover the form's three required sections. Add optional sections only where they 
 ## Acceptance criteria
 - [ ] <observable outcome a reviewer can check>
 
-## Scope and open questions
+## Open questions and scope
 <boundaries, alternatives and unresolved feasibility or design questions>
 
 ## Implementation notes
@@ -65,4 +65,4 @@ When filing is authorized:
 - Set the type to Feature with the GraphQL `updateIssueIssueType` mutation, looking up the existing type ID from the organization's `issueTypes`. Preserve organization-wide type administration.
 - Read back the issue body and metadata, then report its URL and any other authorized changes.
 
-The next step is maintainer review. The accepting maintainer identifies any needed design or implementation planning under the [contribution workflow](../../../CONTRIBUTING.md#contribution-workflow); reuse accepted issue decisions in those artifacts.
+The next step is maintainer review. The maintainer who agrees with the proposal says whether it needs an RFC or an OpenSpec change (see [CONTRIBUTING.md](../../../CONTRIBUTING.md#new-commands-need-an-issue-first)); reuse the issue's agreed decisions in those artifacts.
