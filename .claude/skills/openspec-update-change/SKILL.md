@@ -46,7 +46,7 @@ This workflow revises existing artifact outputs. Missing artifacts remain a sepa
 
    Mark the most recently modified change as "(Recommended)" since it's likely what the user wants to update.
 
-   Always announce: "Using change: <name>" and how to override (e.g., `/opsx:update <other>`).
+   Always announce: "Using change: <name>" and how to override (e.g., `/openspec-update-change <other>`).
 
 2. **Get the change's artifacts**
    ```bash
@@ -91,8 +91,8 @@ This workflow revises existing artifact outputs. Missing artifacts remain a sepa
 6. **Continue only the phases included in the request**
    - A planning-only request ends with the revised artifacts and next-step guidance. If implementation was already requested and applicable maintainer decisions are settled, continue through the apply workflow; keep code edits out of this planning workflow itself.
    - Artifacts with empty `existingOutputPaths` and status `ready` or `blocked` -> run `openspec status --change "<name>" --json` for the next artifact and point the user to `openspec instructions "<artifact-id>" --change "<name>" --json` for how to create it.
-   - Change already implemented (tasks checked off / already applied) -> the code may no longer match the revised plan; suggest `/opsx:apply` to carry the delta into code.
-   - Everything done and implemented -> suggest `/opsx:archive`.
+   - Change already implemented (tasks checked off / already applied) -> the code may no longer match the revised plan; suggest `/openspec-apply-change` to carry the delta into code.
+   - Everything done and implemented -> suggest `/openspec-archive-change`.
 
 **Output**
 
@@ -103,7 +103,7 @@ After each invocation, show:
 - Where the change stands and the recommended next command
 
 **Guardrails**
-- Edit planning artifacts in this workflow. For a planning-only request, point to `/opsx:apply` when the plan implies code changes; when implementation was already requested and applicable maintainer decisions are settled, transition to apply instead.
+- Edit planning artifacts in this workflow. For a planning-only request, point to `/openspec-apply-change` when the plan implies code changes; when implementation was already requested and applicable maintainer decisions are settled, transition to apply instead.
 - Use the artifact ids and paths reported by `openspec status`; never branch on hardcoded artifact names.
 - Edit only the concrete files in `existingOutputPaths`; never write to a glob `resolvedOutputPath`.
 - Do not advance the build frontier: if an artifact has empty `existingOutputPaths` and status `ready` or `blocked`, creating them is a separate step, outside this workflow. Leave `skipped` artifacts untouched. The only new-file scope is an authorized concrete path under a glob artifact whose `existingOutputPaths` is non-empty.
