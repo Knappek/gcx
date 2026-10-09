@@ -1,38 +1,39 @@
 name: Bug report
-description: Report behavior that is not working as expected
+description: Report something in gcx that doesn't work as expected
 type: Bug
 labels: ["action/needs-triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        **Title tip:** Name the symptom so others can find the report.
+        This issue is public. Remove credentials, and replace stack names, URLs and IDs with placeholders. Report security vulnerabilities through the [private security channel](https://github.com/grafana/gcx/security/policy) instead.
 
-        Check [existing issues](https://github.com/grafana/gcx/issues) for a matching report. See the [contribution workflow](https://github.com/grafana/gcx/blob/main/CONTRIBUTING.md#contribution-workflow) for what happens next.
-
-        This issue is public. Remove credentials and replace stack names, URLs, IDs and other identifying details with placeholders. Report security vulnerabilities through the [private security channel](https://github.com/grafana/gcx/security/policy).
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Existing issues
+      options:
+        - label: I searched [existing issues](https://github.com/grafana/gcx/issues?q=is%3Aissue) and this bug isn't reported yet.
+          required: true
 
   - type: textarea
-    id: problem
+    id: what_happened
     attributes:
-      label: Problem
-      description: What happened, and how does it affect your work? Include the command and relevant output when applicable.
+      label: What happened
+      description: |
+        What you ran, what you expected, and what happened instead. Include the full command and its output. Running with `-v`, `-vv` or `-vvv` prints more detail.
     validations:
       required: true
 
   - type: textarea
-    id: expected_behavior
+    id: steps
     attributes:
-      label: Expected behavior
-      description: What should have happened instead?
-    validations:
-      required: true
-
-  - type: textarea
-    id: reproduction_or_evidence
-    attributes:
-      label: Reproduction or evidence
-      description: Share steps to reproduce, a minimal example, or evidence such as sanitized logs or screenshots. If reproduction is uncertain, describe what you observed and when.
+      label: Steps to reproduce
+      description: The smallest set of commands that shows the bug.
+      placeholder: |
+        1. gcx config use-context <my-context>
+        2. gcx resources push ./dashboards/
+        3. See error: 403 Forbidden
     validations:
       required: true
 
@@ -40,16 +41,13 @@ body:
     id: gcx_version
     attributes:
       label: gcx version
-      description: "Run `gcx --version` to get this information."
+      description: Output of `gcx --version`.
+    validations:
+      required: true
 
   - type: input
     id: environment
     attributes:
       label: Environment
-      description: Operating system, shell and Grafana version, where relevant. Include Go version if building from source.
-
-  - type: textarea
-    id: context
-    attributes:
-      label: Additional context
-      description: When did this start? Include relevant changes, workarounds or troubleshooting already tried.
+      description: Operating system, and Grafana version or Grafana Cloud.
+      placeholder: macOS 15 arm64, Grafana Cloud
