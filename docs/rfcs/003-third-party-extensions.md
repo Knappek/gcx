@@ -16,11 +16,11 @@ Being technically suitable for an extension does not decide where a capability b
 
 ## Scope
 
-The first version covers manifest parsing, local and remote installation, one installed version per name, listing, explicit updates, removal and subprocess dispatch. Compiled programs and scripts are supported without a language-specific SDK. The native target matrix is Linux, macOS and Windows on amd64 and arm64; an individual install fails if its manifest does not support the current platform.
+The first version covers manifest parsing, local and remote installation, one installed version per name, listing, explicit updates, removal and subprocess dispatch. Compiled programs are supported on Linux, macOS and Windows on amd64 and arm64, without a language-specific SDK. Scripts are supported on Linux and macOS only; Windows requires a native executable. An individual install fails if its manifest does not support the current platform.
 
 A central discovery index, `gcx ext search`, background updates, multiple installed versions, scaffolding, manifest generation, shell completion for extension names, sandboxing and artifact signatures are outside this version. Extensions do not register providers, resource adapters or individual commands in gcx's command tree. Full discovery through `gcx commands` and `gcx help-tree` is deferred.
 
-The subprocess design targets native gcx. The embedded `wasip1` build cannot be assumed to support it; its command availability must be established before the feature is mounted.
+The subprocess design targets native gcx. The embedded `wasip1` build does not register `ext` because its runtime cannot start subprocesses.
 
 ## User experience
 
@@ -75,6 +75,8 @@ The `ext` area prevents collisions with top-level gcx commands, but management v
 
 The fallback dispatcher is classified as `raw` under the [agent output protocol](../design/agent-mode.md). It forwards the extension's streams and exit status without wrapping its output or claiming that it obeys gcx's finite JSON contract. Management commands remain gcx-owned commands with their own declared output classes and normal structured errors. An extension need not match gcx's table formatting or color conventions.
 
+Cancellation before launch uses gcx's cancellation status, 5. After launch, Ctrl+C interrupts the child and dispatch preserves its resulting exit status, including a successful exit if the child handles interruption and exits successfully. On Unix, termination by a signal maps to `128 + signal number`, so SIGINT termination returns 130. Dispatch must wait for the child to exit before releasing its execution lock, and must not replace the child result with gcx cancellation status 5. Windows interrupt delivery and process cleanup require platform validation.
+
 Installed extensions appear in local extension help and listing, but not as individual entries in `gcx commands` or `gcx help-tree`. Agent mode is available to an extension through its environment; gcx cannot enforce its behavior. The [exit-code guide](../design/exit-codes.md) will need to document extension child statuses and distinguish them from gcx-owned failures before execution begins.
 
 The constitution already uses “extension commands” to mean domain operations such as `acknowledge`. This proposal uses **third-party extension** for an external program. The dispatch grammar and terminology should be documented explicitly when the feature is accepted.
@@ -83,7 +85,7 @@ The constitution already uses “extension commands” to mean domain operations
 
 Each extension supplies `gcx-extension.yaml`, using the familiar `apiVersion`, `kind` and `metadata` shape. It is an installation document, not a Grafana resource for `gcx resources push`.
 
-The following is an illustrative remote manifest. The artifact key is provisional: the original design prose called it `url`, while its example used `uri`; this RFC uses `uri` until the schema is settled. The checksum placeholder must be replaced with the artifact's full SHA-256 digest.
+The following is an illustrative remote manifest. Remote artifacts use `url`; local files use `path`. The checksum placeholder must be replaced with the artifact's full SHA-256 digest.
 
 ```yaml
 apiVersion: gcx.grafana.com/v1
@@ -93,15 +95,16 @@ metadata:
   description: Manage Acme widget resources from gcx
 version: 1.4.0
 minGCXVersion: 1.8.0
+maxGCXVersion: 1.12.0
 homepage: https://git.example.com/acme/gcx-ext-acme-widgets
 platforms:
   - selector: {os: linux, arch: amd64}
-    uri: https://downloads.example.com/acme-widgets/1.4.0/linux-amd64.tar.gz
+    url: https://downloads.example.com/acme-widgets/1.4.0/linux-amd64.tar.gz
     sha256: "<artifact-sha256>"
     bin: acme-widgets
 ```
 
-The extension version is independent of the gcx version. `minGCXVersion` declares the minimum compatible gcx release; the illustrative version is not a promised release target. The installer checks compatibility before selecting an artifact. Authors add rows for the other platforms they support. If no row matches, installation fails; there is no build-from-source fallback.
+The extension version is independent of the gcx version. `minGCXVersion` declares the minimum compatible gcx release. Optional `maxGCXVersion` declares the highest compatible release, allowing authors to limit execution when later gcx changes would break their extension. Both bounds are inclusive, use full semantic versions rather than range expressions, and are checked at installation and before every execution. A maximum below the minimum is invalid. Omitting the maximum imposes no upper bound. The illustrative versions are not promised release targets. The installed metadata retains both bounds so a gcx upgrade cannot bypass the compatibility check. Authors add rows for the other platforms they support. If no row matches, installation fails; there is no build-from-source fallback.
 
 For a local build, the corresponding entry can be:
 
@@ -111,7 +114,7 @@ platforms:
     path: ./bin/acme-widgets
 ```
 
-A local script manifest can use `script: hello.sh` instead of the platform table. Remote scripts use the same `platforms` artifact entries as compiled programs: `uri` locates an archive, `sha256` verifies its bytes and `bin` identifies the executable script inside it. A manifest obtained from a URL or git repository cannot use `script` or `path` to bypass artifact verification. gcx runs the entry point directly rather than generating a shell command. The author supplies a suitable interpreter entry point; a Unix shebang alone does not establish Windows compatibility.
+A local script manifest can use `script: hello.sh` instead of the platform table. A manifest must specify exactly one of `script` or `platforms`; specifying both is an error. Remote scripts use the same `platforms` artifact entries as compiled programs: `url` locates an archive, `sha256` verifies its bytes and `bin` identifies the executable script inside it. A manifest obtained from a URL or git repository cannot use `script` or `path` to bypass artifact verification. gcx runs the entry point directly rather than generating a shell command. On Linux and macOS, script entry points must be executable and supply a shebang for an interpreter available on the user's machine. Windows supports native executable entry points only: gcx does not resolve script interpreters or invoke scripts through a shell. Local `script` manifests are rejected on Windows; remote packages must provide a native Windows executable to support that platform.
 
 ### Package a script
 
@@ -136,7 +139,7 @@ Compute its digest with `shasum -a 256 hello_1.0.0.tar.gz` on macOS, or `sha256s
 ```yaml
 platforms:
   - selector: {os: linux, arch: amd64}
-    uri: https://downloads.example.com/hello/1.0.0/hello_1.0.0.tar.gz
+    url: https://downloads.example.com/hello/1.0.0/hello_1.0.0.tar.gz
     sha256: "<full-sha256-from-the-command>"
     bin: hello.sh
 ```
@@ -145,15 +148,19 @@ Use the same archive and digest in other platform rows only where the script and
 
 ### Installation sources and local state
 
-`gcx ext install <source>` accepts a local path, including a directory or archive, a direct manifest URL, or a git URL. Git sources use the user's installed `git` and its existing authentication; there is no GitHub API dependency or required hosting service. Remote manifests require HTTPS with certificate verification, and redirects must not downgrade to HTTP. Remote git sources use HTTPS or SSH with server identity verification; unauthenticated transports such as `git://` are unsupported. Downloads use gcx's shared HTTP infrastructure. A checksum from a manifest is useful only if the manifest itself arrived through a trusted transport.
+`gcx ext install <source>` accepts a local path, including a directory or archive, a direct manifest URL, or a git URL. Local paths identify local sources. SSH URLs and HTTPS URLs whose path ends in `.git` identify git repositories; other HTTPS URLs identify manifests by default. `--source-type git` explicitly selects a repository when its HTTPS URL is ambiguous, for example `gcx ext install --source-type git https://git.example.com/acme/widgets`. Resolution does not probe one source type and fall back to another on failure. The index records the resolved source type alongside its location, and updates reuse that type. Git sources use the user's installed `git` and its existing authentication; there is no GitHub API dependency or required hosting service. Remote manifests require HTTPS with certificate verification, and redirects must not downgrade to HTTP. Remote git sources use HTTPS or SSH with server identity verification; unauthenticated transports such as `git://` are unsupported. Downloads use gcx's shared HTTP infrastructure. A checksum from a manifest is useful only if the manifest itself arrived through a trusted transport.
 
 Source, artifact and redirect URLs containing embedded credentials are rejected before use, persistence or display. This includes HTTP user information, access tokens and presigned authentication parameters; errors must not echo the rejected URL. SSH usernames identify the remote account and are allowed, but embedded passwords are not. The index and install/list output contain credential-free locations only. Private git sources use the user's existing git authentication; v1 adds no URL-based credential storage.
 
-The extension directory follows the [configuration directory convention](../../internal/config/loader.go), normally `~/.config/gcx/extensions/`, with a proposed `GCX_EXTENSIONS_DIR` override. Payloads live under `<name>/<version>/`. A single `index.json` records each extension's name, version, description, source, executable path and installation time.
+The extension directory follows the [configuration directory convention](../../internal/config/loader.go), normally `~/.config/gcx/extensions/`, with a proposed `GCX_EXTENSIONS_DIR` override. Payloads live under `<name>/<version>/`. A single `index.json` records each extension's name, version, description, source, executable path, gcx compatibility bounds and installation time.
 
 Only install, update and uninstall change the index. Listing and execution read it instead of scanning PATH, walking extension directories or invoking programs for metadata. Versioned directories identify the current payload; retaining several runnable versions is not part of this proposal.
 
-The installation pipeline resolves the source, validates the manifest and gcx version, selects the executable, presents the installation plan, obtains approval, fetches or copies the payload, verifies it, extracts it if needed and records the installation. Missing or mismatched checksums fail closed for non-local artifacts. A failed verification must not create a runnable index entry. Atomic replacement, concurrent writers and archive containment need the concrete validation described below.
+The installation pipeline resolves the source, validates the manifest and gcx version, selects the executable, presents the installation plan, obtains approval, fetches or copies the payload, verifies it, extracts it if needed and records the installation. Missing or mismatched checksums fail closed for non-local artifacts. A failed verification must not create a runnable index entry. Atomic replacement, concurrent index writers and archive containment need the concrete validation described below.
+
+Update, replacement install and uninstall reject an extension that is currently running through gcx, with an error asking the user to retry after it exits. Dispatch acquires a shared per-extension file lock before reading its installed entry and holds it until the child exits. Mutations require an exclusive lock; if it is busy, they fail without changing the installation. This permits concurrent executions without a process registry, using the existing cross-platform file-locking dependency. Lock files live outside replaceable payload directories and remain stable across uninstall/reinstall. Index writes still require separate serialization to prevent mutations of different extensions from losing each other's changes.
+
+The running check covers invocations supervised by a live gcx dispatcher, not independently launched or detached descendants. A dispatcher crash can release its lock while a child survives; interruption and crash tests must establish the cleanup behavior before this protection is considered validated.
 
 ### Calling gcx from an extension
 
@@ -201,7 +208,7 @@ sequenceDiagram
     Ext-->>User: Extension-owned output via inherited streams
 ```
 
-This makes gcx's JSON outputs an integration surface. Existing envelopes vary by command; `minGCXVersion` only rejects versions that are too old and cannot detect incompatible later changes. The proposal accepts that limitation for the first version, without claiming that all existing outputs have a uniform schema or a new compatibility guarantee.
+This makes gcx's JSON outputs an integration surface. Existing envelopes vary by command. Authors can bound supported gcx releases with `minGCXVersion` and optional `maxGCXVersion`, but those declarations require author testing; they do not detect incompatible output changes automatically or establish a new compatibility guarantee.
 
 ### Trust and credentials
 
@@ -252,7 +259,7 @@ Authors maintain manifests, platform artifacts and checksums themselves. Script 
 
 Agents cannot discover individual extension capabilities through gcx's normal catalog, and gcx cannot guarantee their output, errors, safety or support ownership. These costs make extensions a poor default for stable Grafana-owned capabilities. The mechanism cannot enforce that organisational boundary.
 
-Parsing gcx JSON couples extensions to command outputs. Author testing and `minGCXVersion` provide limited protection; neither detects every future incompatibility. Extension processes also retain the user's broad local permissions, and the proposed telemetry names can disclose organisational information.
+Parsing gcx JSON couples extensions to command outputs. Author testing and declared gcx version bounds provide limited protection; they do not detect future incompatibilities automatically, and an upper bound requires authors to publish an update before users can run the extension on newer gcx releases. Extension processes also retain the user's broad local permissions, and the proposed telemetry names can disclose organisational information.
 
 ## Rationale and alternatives
 
@@ -283,25 +290,25 @@ This conversion carries forward design conclusions from the earlier extension pr
 | Contract | Required evidence |
 | --- | --- |
 | Independently owned use case | A real partner or customer authors and maintains an extension outside gcx, exercising authoring, installation, updates and authenticated calls. The Azure onboarding prototype tests the mechanism but does not establish this independently owned workflow |
-| Manifest and platform selection | Table-driven tests for required fields, reserved names, minimum gcx version, each native platform, local wildcard rows and no matching artifact |
-| Hosting independence | Install from a local directory/archive, a static manifest host and a non-GitHub git repository without host-specific APIs |
+| Manifest and platform selection | Table-driven tests for required fields, reserved names, inclusive minimum/maximum gcx versions at install and execution, omitted maximum, invalid bounds, each native platform, local wildcard rows, no matching artifact and rejection of manifests with both `script` and `platforms` |
+| Hosting independence | Install from a local directory/archive, a static manifest host and a non-GitHub git repository without host-specific APIs; verify deterministic source classification, explicit git selection for HTTPS URLs without `.git`, and reuse of the recorded source type on update |
 | Source trust | Reject HTTP manifests, HTTPS-to-HTTP redirects and unauthenticated remote git transports; reject credential-bearing source, artifact and redirect URLs without persisting or echoing secrets |
 | Artifact integrity | Package and install the documented script example; verify its checksum and executable entry point; missing or incorrect remote checksums and remote `script`/`path` shortcuts fail without a runnable registration; archive entries cannot escape the installation directory |
-| Installation state | Failed updates and manifest-name mismatches preserve existing installations; explicit source replacement presents both sources for approval; simultaneous mutations do not corrupt or lose index entries |
+| Installation state | Failed updates and manifest-name mismatches preserve existing installations; explicit source replacement presents both sources for approval; simultaneous mutations do not corrupt or lose index entries; concurrent executions are allowed, while update/replacement/uninstall reject active invocations without changing state; exercise dispatch/mutation races and stable locks across reinstall |
 | Approval | Interactive decline returns cancellation; agent mode requires the documented bypass; no extension code runs during install |
 | Responsibility disclosures | The user guide and help contain the responsibility model; install/update plans and each execution show the required notice, including agent and auto-approved paths; diagnostics stay on stderr without changing structured or extension stdout |
-| Argument and process behavior | Global flags before `ext`, verbatim child arguments, preserved working directory and relative inputs, reserved-name handling, inherited streams, nonzero child exits and interruption; new management commands cannot hide previously valid extension names |
+| Argument and process behavior | Global flags before `ext`, verbatim child arguments, preserved working directory and relative inputs, reserved-name handling, inherited streams, nonzero child exits, pre-launch cancellation status 5, child results after interruption and Unix signal-status mapping; new management commands cannot hide previously valid extension names |
 | Context and authentication | Verify flag/environment/current-context precedence, absolute explicit-file propagation, preserved layering and local config discovery, missing-context failure, auth refresh and resolved agent mode; changing the selected context between child calls is observed, while changing only `current-context` does not redirect them |
 | Output consumption | An example extension explicitly requests JSON and handles a structured partial failure on stdout despite exit 4 |
 | Telemetry | Enabled usage statistics include installed names only; the existing opt-out suppresses all extension events, local-only log mode sends nothing, and unmatched names and extension arguments cannot reach any telemetry field; the updated notice reaches existing installations |
-| Portability | Compiled execution across all six native targets, documented script/interpreter behavior, and a defined `wasip1` command surface |
+| Portability | Compiled execution across all six native targets, Unix shebang execution and missing-interpreter failures, Windows rejection of script entry points, dispatcher interruption/crash cleanup and absence of `ext` from the `wasip1` command surface |
 
 Implementation can proceed in small slices: manifest validation, directory/index management, local installation, remote sources, update/removal and CLI dispatch. Context propagation must be ready before end-to-end dispatch is considered correct. Command wiring must include output metadata, help, user and author documentation, and tests for the final process boundary. Architecture and package-map documentation should change with the implementation they describe.
 
 ## Unresolved questions
 
-- **Manifest and install state:** finalize `uri` versus `url`, version-constraint syntax, valid names, source classification and script/platform exclusivity. Establish atomic update and index-write behavior through failure and concurrency tests.
-- **Process portability:** establish Windows interpreter behavior, interruption and exit-status propagation, and native-only command registration for `wasip1` if subprocess execution is unavailable there.
+- **Manifest and install state:** finalize valid extension names. Establish atomic update and index-write behavior through failure and concurrency tests, including execution/mutation races.
+- **Process portability:** validate Windows interruption and child-result propagation, Unix signal-status mapping, child cleanup after dispatcher failure, and native-only command registration for `wasip1`.
 
 These are acceptance gaps in the proposed contract. They remain open rather than being resolved by the format conversion.
 
