@@ -97,12 +97,12 @@ The constitution already uses “extension commands” to mean domain operations
 
 ### Manifest
 
-Each repository supplies `gcx-extension.yaml` at its root. `apiVersion: v1` identifies the manifest schema; `version` identifies the extension release. Names and descriptions are top-level fields, and there is no `kind` field. This is an installation document, not a Grafana resource for `gcx resources push`. `homepage` and `maxGCXVersion` are optional.
+Each repository supplies `gcx-extension.yaml` at its root. `schemaVersion: 1` identifies the manifest format using an integer; `version` identifies the extension release. gcx rejects unsupported schema versions with a clear error before installing the extension. Names and descriptions are top-level fields, and there is no `kind` field. This is an installation document, not a Grafana resource for `gcx resources push`. `homepage` and `maxGCXVersion` are optional.
 
 A compiled extension, for example one written in Go, publishes prebuilt archives and records their URLs and full SHA-256 digests in its manifest. Users do not need Go installed. The following example supports three targets; authors add entries for the other targets they support:
 
 ```yaml
-apiVersion: v1
+schemaVersion: 1
 name: acme-widgets
 description: Manage Acme widget resources from gcx
 version: 1.4.0
@@ -145,7 +145,7 @@ A manifest must specify exactly one of `script` or `platforms`; specifying both 
 Commit the script and its supporting files alongside `gcx-extension.yaml`. A complete manifest for a script that works on both Linux and macOS is:
 
 ```yaml
-apiVersion: v1
+schemaVersion: 1
 name: hello
 description: List dashboards through gcx
 version: 1.0.0
@@ -313,7 +313,7 @@ Validation must exercise the following contracts before release:
 | Contract | Required evidence |
 | --- | --- |
 | Independently owned use case | A real partner or customer authors and maintains an extension outside gcx, exercising authoring, installation, updates and authenticated calls |
-| Manifest and platform selection | Table-driven tests for schema version, required and optional fields, reserved names, inclusive minimum/maximum gcx versions at install and execution, omitted maximum, invalid bounds, each native platform, local wildcard rows, no matching artifact and rejection of manifests with both `script` and `platforms` |
+| Manifest and platform selection | Table-driven tests for integer schema versions, rejection of unsupported schema versions, required and optional fields, reserved names, inclusive minimum/maximum gcx versions at install and execution, omitted maximum, invalid bounds, each native platform, local wildcard rows, no matching artifact and rejection of manifests with both `script` and `platforms` |
 | Hosting independence | Install from a local git checkout and non-GitHub HTTPS/SSH repositories, including HTTPS URLs without `.git`; reject standalone manifests, archives and non-repository directories |
 | Repository revisions | Branch updates follow the recorded branch; tags and full commit IDs remain pinned; install the approved commit even if a ref moves; local installs use committed files and local branch updates without pulling a remote; preserve script executable permissions and supporting files |
 | Source trust | Reject HTTP and `git://` transports and HTTPS-to-HTTP redirects; reject credential-bearing source, artifact and redirect URLs without persisting or echoing secrets; verify HTTPS certificates and SSH host identity |
