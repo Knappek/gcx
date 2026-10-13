@@ -4,7 +4,7 @@
 
 Add `gcx ext` to install, list, update, remove and run third-party programs. Authors distribute a program and a declarative manifest from a local directory, a static host or a git repository. gcx selects and verifies the appropriate artifact, records the installation and invokes it as a subprocess. Extensions that need Grafana or Cloud access call the invoking gcx binary, reusing its authentication and context resolution without a new credential-export API.
 
-This is a proposal, not a shipped capability. It retains the extension design's narrow scope: independently maintained partner integrations and customer tooling, with no required registry, SDK or separate extension manager. Context propagation, remote script verification and the proposed telemetry privacy exception still need resolution before implementation can satisfy the full contract.
+This is a proposal, not a shipped capability. It retains the extension design's narrow scope: independently maintained partner integrations and customer tooling, with no required registry, SDK or separate extension manager. The contract includes inherited configuration selection, checksummed remote script packages and extension-name reporting controlled by the existing usage-statistics setting. Remaining schema and platform details need validation before implementation can satisfy the full contract.
 
 ## Motivation
 
@@ -61,7 +61,7 @@ gcx ext install ./gcx-ext-acme-widgets
 gcx ext acme-widgets --help
 ```
 
-A platform row may point to a binary relative to the manifest using `path`, instead of a remote artifact location. A local build can use wildcard OS and architecture selectors because it is intended for the machine doing the install. A script can use `script` instead of `platforms`; its interpreter and platform requirements remain the author's responsibility.
+A platform row may point to a binary relative to the manifest using `path`, instead of a remote artifact location. A local build can use wildcard OS and architecture selectors because it is intended for the machine doing the install. A local script can use `script` instead of `platforms`; remotely distributed scripts use the checksummed packages described below. Interpreter and platform requirements remain the author's responsibility.
 
 ## Technical design
 
@@ -99,8 +99,6 @@ platforms:
     uri: https://downloads.example.com/acme-widgets/1.4.0/linux-amd64.tar.gz
     sha256: "<artifact-sha256>"
     bin: acme-widgets
-telemetry:
-  reportUsage: false
 ```
 
 The extension version is independent of the gcx version. `minGCXVersion` declares the minimum compatible gcx release; the illustrative version is not a promised release target. The installer checks compatibility before selecting an artifact. Authors add rows for the other platforms they support. If no row matches, installation fails; there is no build-from-source fallback.
@@ -113,7 +111,37 @@ platforms:
     path: ./bin/acme-widgets
 ```
 
-A script manifest uses `script: hello.sh` instead of the platform table. gcx runs the program directly rather than generating a shell command. The author supplies a suitable interpreter entry point; a Unix shebang alone does not establish Windows compatibility. Remote script packaging and integrity verification remain unresolved below.
+A local script manifest can use `script: hello.sh` instead of the platform table. Remote scripts use the same `platforms` artifact entries as compiled programs: `uri` locates an archive, `sha256` verifies its bytes and `bin` identifies the executable script inside it. A manifest obtained from a URL or git repository cannot use `script` or `path` to bypass artifact verification. gcx runs the entry point directly rather than generating a shell command. The author supplies a suitable interpreter entry point; a Unix shebang alone does not establish Windows compatibility.
+
+### Package a script
+
+A package is an archive containing the script and any supporting files it needs. Its SHA-256 digest lets gcx verify that the downloaded archive matches the manifest before extracting it. There is no compilation step or SDK.
+
+For example, save this as `hello.sh` on a Unix system:
+
+```sh
+#!/bin/sh
+exec "$GCX_EXT_GCX_BIN" resources get dashboards --output json
+```
+
+Make it executable and create the archive:
+
+```bash
+chmod +x hello.sh
+tar -czf hello_1.0.0.tar.gz hello.sh
+```
+
+Compute its digest with `shasum -a 256 hello_1.0.0.tar.gz` on macOS, or `sha256sum hello_1.0.0.tar.gz` on Linux. Upload that exact archive to an HTTPS location and copy the full digest into the manifest's platform entry:
+
+```yaml
+platforms:
+  - selector: {os: linux, arch: amd64}
+    uri: https://downloads.example.com/hello/1.0.0/hello_1.0.0.tar.gz
+    sha256: "<full-sha256-from-the-command>"
+    bin: hello.sh
+```
+
+Use the same archive and digest in other platform rows only where the script and its dependencies work. Recreating or changing the archive requires recomputing the digest. gcx checks it before extraction, preserves the executable entry point and never runs the script during installation. User-facing author documentation must include this minimal packaging recipe.
 
 ### Installation sources and local state
 
@@ -121,7 +149,7 @@ A script manifest uses `script: hello.sh` instead of the platform table. gcx run
 
 Source, artifact and redirect URLs containing embedded credentials are rejected before use, persistence or display. This includes HTTP user information, access tokens and presigned authentication parameters; errors must not echo the rejected URL. SSH usernames identify the remote account and are allowed, but embedded passwords are not. The index and install/list output contain credential-free locations only. Private git sources use the user's existing git authentication; v1 adds no URL-based credential storage.
 
-The extension directory follows the [configuration directory convention](../../internal/config/loader.go), normally `~/.config/gcx/extensions/`, with a proposed `GCX_EXTENSIONS_DIR` override. Payloads live under `<name>/<version>/`. A single `index.json` records each extension's name, version, description, source, executable path and installation time, plus the information needed to honor its telemetry setting.
+The extension directory follows the [configuration directory convention](../../internal/config/loader.go), normally `~/.config/gcx/extensions/`, with a proposed `GCX_EXTENSIONS_DIR` override. Payloads live under `<name>/<version>/`. A single `index.json` records each extension's name, version, description, source, executable path and installation time.
 
 Only install, update and uninstall change the index. Listing and execution read it instead of scanning PATH, walking extension directories or invoking programs for metadata. Versioned directories identify the current payload; retaining several runnable versions is not part of this proposal.
 
@@ -138,9 +166,14 @@ gcx launches the installed executable by its recorded path while preserving the 
 | `GCX_EXT_GCX_BIN` | Path to the invoking gcx executable |
 | `GCX_EXT_NAME` | Installed name used for dispatch, which may differ from the executable name |
 | `GCX_AGENT_MODE` | Agent mode resolved by the parent invocation |
-| `GCX_CONTEXT` | Context resolved by the parent invocation |
+| `GCX_CONTEXT` | Context name resolved by the parent invocation |
+| `GCX_CONFIG` | Absolute path to an explicitly selected config file, when one was selected |
 
-`GCX_CONTEXT` is a prerequisite, not an existing capability on main. It must participate in normal context selection, with an explicit child `--context` taking precedence. Otherwise `gcx --context staging ext acme-widgets` can call back into gcx and silently operate on `current-context` instead. The full propagation contract must also cover an explicit parent `--config`: preserving only the context name is insufficient when the child loads a different config file.
+`GCX_CONTEXT` is a prerequisite, not an existing capability on main. Context selection follows explicit `--context`, then `GCX_CONTEXT`, then `current-context`. The parent passes its selected name to the extension; a child invocation can deliberately override it with `--context`. A missing selected context is an error, never a fallback to another target.
+
+If the parent selected a file explicitly through `--config` or `GCX_CONFIG`, dispatch passes that selection through `GCX_CONFIG` as an absolute path. The parent's explicit flag takes precedence over its environment; an explicit child `--config` can override the inherited selection. Without an explicit file selection, dispatch leaves `GCX_CONFIG` unset and preserves normal system, user and local config layering. It must not turn the default user config path into an explicit selection that bypasses other layers.
+
+Children inherit the parent's environment and invocation directory, then use ordinary gcx configuration loading and authentication refresh for each call. This preserves configuration selection, not a snapshot of the resolved destination or credentials. If the selected context's configuration is edited between calls, later calls see that edit; changing only `current-context` does not replace the inherited context name. Dispatch does not export resolved credentials or create a temporary config snapshot.
 
 For example, a script can retrieve resources through the host:
 
@@ -178,13 +211,13 @@ An installed extension runs with the user's permissions and inherits the parent'
 
 An author who needs a raw credential for a separate SDK receives no new API for that in this design. A future credential mechanism would need its own justification and review.
 
-### Proposed usage telemetry
+### Usage telemetry
 
-The original proposal records `gcx ext <name>` through the existing [telemetry pipeline](../../internal/telemetry/event.go), preserving the user's global opt-out. A name is eligible only after it matches an installed index entry; unmatched text is discarded. Arguments and extension flag values are never recorded.
+gcx records `gcx ext <name>` through the existing [telemetry pipeline](../../internal/telemetry/event.go). A name is eligible only after it matches an installed index entry; unmatched text is discarded. Arguments and extension flag values are never recorded. Names are plain text so usage can be attributed to individual extensions.
 
-Names would be recorded in plain text to measure extension popularity. `telemetry.reportUsage: false` suppresses the extension name; the proposed default is `true`. This is a requested policy exception: an installed name can still identify an organisation, so an index lookup does not make it compatible with the current privacy invariant. Author opt-out also does not protect an internal extension whose author leaves the default unchanged.
+Extension usage follows the existing [usage-statistics setting and precedence](../../internal/telemetry/telemetry.go), which is enabled by default. The existing opt-out, including `GCX_TELEMETRY=disabled` or `diagnostics.telemetry: disabled` in config, disables extension events as well as built-in command events. There is no separate extension-name opt-in or manifest-level opt-out. Disabled means no extension event is emitted, including a generic `gcx ext` event; the existing local-only `log` mode continues to send nothing.
 
-The RFC retains this proposal for review but does not treat the exception as approved. Acceptance requires an explicit privacy decision, corresponding policy and first-run notice updates, and verification that opted-out names cannot reach telemetry fields. Whether an opted-out invocation still emits a generic `gcx ext` event must be settled at the same time.
+Extension names can identify an organisation or internal workflow. Reporting them is an explicit exception to the existing privacy rule, controlled by the user's usage-statistics setting. Before release, update the telemetry policy, published usage-statistics documentation and first-run notice, including its revision for existing installations, to disclose name reporting. Authors may implement their own extension telemetry, but gcx cannot enforce its opt-out on arbitrary third-party code; user documentation must keep that boundary clear.
 
 ## Drawbacks
 
@@ -214,22 +247,19 @@ This conversion carries forward design conclusions from the earlier extension pr
 | Manifest and platform selection | Table-driven tests for required fields, reserved names, minimum gcx version, each native platform, local wildcard rows and no matching artifact |
 | Hosting independence | Install from a local directory/archive, a static manifest host and a non-GitHub git repository without host-specific APIs |
 | Source trust | Reject HTTP manifests, HTTPS-to-HTTP redirects and unauthenticated remote git transports; reject credential-bearing source, artifact and redirect URLs without persisting or echoing secrets |
-| Artifact integrity | Missing and incorrect remote checksums fail without a runnable registration; archive entries cannot escape the installation directory |
+| Artifact integrity | Package and install the documented script example; verify its checksum and executable entry point; missing or incorrect remote checksums and remote `script`/`path` shortcuts fail without a runnable registration; archive entries cannot escape the installation directory |
 | Installation state | Failed updates and manifest-name mismatches preserve existing installations; explicit source replacement presents both sources for approval; simultaneous mutations do not corrupt or lose index entries |
 | Approval | Interactive decline returns cancellation; agent mode requires the documented bypass; no extension code runs during install |
 | Argument and process behavior | Global flags before `ext`, verbatim child arguments, preserved working directory and relative inputs, reserved-name handling, inherited streams, nonzero child exits and interruption; new management commands cannot hide previously valid extension names |
-| Context and authentication | Use contexts pointing to different test destinations, a separate explicit config file and a local `.gcx.yaml` that overrides a context of the same name; child calls retain the selected target, local config discovery, auth refresh and resolved agent mode |
+| Context and authentication | Verify flag/environment/current-context precedence, absolute explicit-file propagation, preserved layering and local config discovery, missing-context failure, auth refresh and resolved agent mode; changing the selected context between child calls is observed, while changing only `current-context` does not redirect them |
 | Output consumption | An example extension explicitly requests JSON and handles a structured partial failure on stdout despite exit 4 |
-| Telemetry | Global opt-out, author opt-out and unmatched names cannot leak names or arguments through command, flag, error or other fields |
+| Telemetry | Enabled usage statistics include installed names only; the existing opt-out suppresses all extension events, local-only log mode sends nothing, and unmatched names and extension arguments cannot reach any telemetry field; the updated notice reaches existing installations |
 | Portability | Compiled execution across all six native targets, documented script/interpreter behavior, and a defined `wasip1` command surface |
 
 Implementation can proceed in small slices: manifest validation, directory/index management, local installation, remote sources, update/removal and CLI dispatch. Context propagation must be ready before end-to-end dispatch is considered correct. Command wiring must include output metadata, help, user and author documentation, and tests for the final process boundary. Architecture and package-map documentation should change with the implementation they describe.
 
 ## Unresolved questions
 
-- **Telemetry policy:** approve the explicit name-reporting exception and default, or revise reporting to fit the existing privacy invariant. Decide generic-event behavior for author opt-out and update the user notice if the exception is accepted.
-- **Context propagation:** define `GCX_CONTEXT` precedence and forwarding of explicit config selection and other relevant invocation overrides. Prove parent and child target the same stack, including when config files contain different contexts with the same name.
-- **Remote scripts and local paths:** define how a remote script payload is packaged and checksummed, including git sources and direct manifest URLs. A remote manifest must not bypass verification by selecting `script` or `path`.
 - **Manifest and install state:** finalize `uri` versus `url`, version-constraint syntax, valid names, source classification and script/platform exclusivity. Establish atomic update and index-write behavior through failure and concurrency tests.
 - **Process portability:** establish Windows interpreter behavior, interruption and exit-status propagation, and native-only command registration for `wasip1` if subprocess execution is unavailable there.
 
