@@ -12,7 +12,7 @@ A partner wants to ship `gcx ext acme-widgets` to map its product's resources in
 
 The existing [command tree](../../cmd/gcx/root/command.go) and provider registration model cover built-in capabilities. A third-party program needs a separate distribution and execution mechanism. The goals are easy authoring, support for the six native OS/architecture combinations gcx releases, freedom to choose a host, and management through gcx itself.
 
-Being technically suitable for an extension does not decide where a capability belongs. Vendor-specific datasource onboarding, for example, might depend on an external toolchain and need no internal gcx API, yet still belong in core because users need to discover it during setup and a Grafana team owns its support. Moving stable Grafana product capabilities outside the command catalog would weaken the consistent experience described in [VISION.md](../../VISION.md).
+Being technically suitable for an extension does not decide where a capability belongs. A public API makes an extension feasible, but does not by itself justify shipping a stable Grafana capability outside core: ownership, discoverability and the shared CLI behavior contract still determine placement. Vendor-specific datasource onboarding, for example, might depend on an external toolchain and need no internal gcx API, yet still belong in core because users need to discover it during setup and a Grafana team owns its support. Moving stable Grafana product capabilities outside the command catalog would weaken the consistent experience described in [VISION.md](../../VISION.md).
 
 ## Scope
 
@@ -204,6 +204,7 @@ This conversion carries forward design conclusions from the earlier extension pr
 
 | Contract | Required evidence |
 | --- | --- |
+| Independently owned use case | A real partner or customer authors and maintains an extension outside gcx, exercising authoring, installation, updates and authenticated calls. The Azure onboarding prototype tests the mechanism but does not establish this independently owned workflow |
 | Manifest and platform selection | Table-driven tests for required fields, reserved names, minimum gcx version, each native platform, local wildcard rows and no matching artifact |
 | Hosting independence | Install from a local directory/archive, a static manifest host and a non-GitHub git repository without host-specific APIs |
 | Artifact integrity | Missing and incorrect remote checksums fail without a runnable registration; archive entries cannot escape the installation directory |
