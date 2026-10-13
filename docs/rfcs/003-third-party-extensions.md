@@ -237,6 +237,18 @@ In-process plugins would couple extension authors to gcx's build and runtime. Se
 
 A credential-resolution command, permission manifest and language SDK would add another authentication interface when calling gcx already serves the motivating cases. Scaffolding and generated manifests may reduce author effort later, but neither is necessary to establish the execution contract.
 
+### Alternative: require a git repository
+
+Every extension could instead be a git repository containing a small manifest, hosted on any supported git server. Installation would accept a repository URL or local checkout; standalone manifest URLs and local archives would no longer be installation sources. This is an alternative for review, not a change to the distribution contract above.
+
+The installed record would retain the repository URL, selected ref and installed commit. Installation would obtain the repository snapshot and read its manifest. Updates would follow the selected ref, while an explicit commit pin would remain fixed. Remote retrieval would use the user's existing git authentication over the trusted transports described above, without GitHub-specific APIs or release discovery.
+
+Scripts and their supporting files would live in the repository and run from the installed snapshot. Authors would commit those files rather than publish a separate script archive and checksum. Git would supply the snapshot and commit identity, with trusted transport protecting retrieval; this would not establish publisher trust or imply signature verification. Compiled programs would continue to use platform-specific artifacts declared in the manifest, with mandatory checksums for those external downloads. Neither automatic builds nor installation hooks would be introduced.
+
+This would reduce source-resolution paths and give scripts and binaries one source/update model. Requiring a repository alone would save less: retaining the remote-script packaging requirement would still make authors publish a second artifact. Adopting this alternative would therefore replace that requirement for repository-contained scripts, while retaining it for external artifacts.
+
+The tradeoff is a git requirement for remote installation and the loss of installation from a static manifest host alone. Authors would need a repository even for a single executable, and binary artifact downloading would still exist. Safe installation, atomic updates, platform selection, extension identity checks and the execution/configuration contracts would remain necessary.
+
 ## Validation
 
 This conversion carries forward design conclusions from the earlier extension proposal; it does not independently verify the prototype or claim production readiness. Validation must exercise the following contracts before release:
