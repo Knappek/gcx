@@ -8,7 +8,7 @@ This design aims for a narrow scope: independently maintained extensions with no
 
 ## Motivation
 
-Someone wants to ship functionality closely related to gcx that does not sit within its core feature set, such as an interactive TUI. Or a company wants to distribute a tool built around gcx to its staff without having to fork gcx.
+Extensions let authors ship functionality closely related to gcx that does not sit within its core feature set, such as an interactive TUI. They also let a company distribute a tool built around gcx to its staff without having to fork gcx.
 
 The existing [command tree](../../cmd/gcx/root/command.go) and provider registration model cover built-in capabilities. An extension program needs a separate distribution and execution mechanism. The goals are:
 
@@ -19,9 +19,9 @@ The existing [command tree](../../cmd/gcx/root/command.go) and provider registra
 
 ## Scope
 
-The first version requires a git repository and covers manifest parsing, installation from a repository URL or local checkout, one installed version per name, listing, explicit updates, removal and subprocess dispatch. Compiled programs are supported on Linux, macOS and Windows on amd64 and arm64, without a language-specific SDK. Scripts are supported on Linux and macOS only; Windows requires a native executable. An individual install fails if its manifest does not support the current platform.
+The first version requires each extension to be a git repository. Users can install extensions from a repository URL or local checkout, list installed extensions, update them, remove them and run them. Each compiled extension declares the OS/architecture combinations it supports in its manifest; it does not have to support every platform gcx runs on. There is no extension SDK. Scripts are supported on Linux and macOS only; Windows requires a native executable.
 
-Standalone manifest URLs, archive installation sources, automatic builds, a central discovery index, `gcx ext search`, background updates, multiple installed versions, scaffolding, manifest generation, shell completion for extension names, sandboxing and artifact signatures are outside this version. Extensions do not register providers, resource adapters or individual commands in gcx's command tree. Full discovery through `gcx commands` and `gcx help-tree` is deferred.
+The following are out of scope for v1 but may be considered in the future: standalone manifest URLs instead of git repositories, a central discovery index, search for Grafana-owned extensions, background updates, extension scaffolding, manifest generation and shell completion for extension names. Extension discovery through `gcx commands` and `gcx help-tree` is also out of scope.
 
 The entire `gcx ext` command tree is experimental, including management commands and extension dispatch. Follow the [experimental-command conventions](../design/experimental-commands.md) for help text and stability metadata on every command. The subprocess design targets native gcx; `wasip1` support is outside v1 scope and that build does not register `ext`.
 
@@ -99,7 +99,7 @@ The constitution already uses “extension commands” to mean domain operations
 
 Each repository supplies `gcx-extension.yaml` at its root. `schemaVersion: 1` identifies the manifest format using an integer; `version` identifies the extension release. gcx rejects unsupported schema versions with a clear error before installing the extension. Names and descriptions are top-level fields, and there is no `kind` field. This is an installation document, not a Grafana resource for `gcx resources push`. `homepage` and `maxGCXVersion` are optional.
 
-A compiled extension, for example one written in Go, publishes prebuilt archives and records their URLs and full SHA-256 digests in its manifest. Users do not need Go installed. The following example supports three targets; authors add entries for the other targets they support:
+A compiled extension, for example one written in Go, publishes prebuilt archives and records their URLs and full SHA-256 digests in its manifest. Users do not need Go installed. The `platforms` list declares the supported OS/architecture combinations. Authors may list any nonempty subset of gcx's native targets; omitted combinations are unsupported. The following example supports only the three listed targets:
 
 ```yaml
 schemaVersion: 1
@@ -124,7 +124,7 @@ platforms:
     bin: acme-widgets.exe
 ```
 
-The extension version is independent of the gcx version. `minGCXVersion` declares the minimum compatible gcx release. Optional `maxGCXVersion` declares the highest compatible release, allowing authors to limit execution when later gcx changes would break their extension. Both bounds are inclusive, use full semantic versions rather than range expressions, and are checked at installation and before every execution. A maximum below the minimum is invalid. Omitting the maximum imposes no upper bound. The illustrative versions are not promised release targets. The installed metadata retains both bounds so a gcx upgrade cannot bypass the compatibility check. If no platform row matches, installation fails; there is no build-from-source fallback.
+The extension version is independent of the gcx version. `minGCXVersion` declares the minimum compatible gcx release. Optional `maxGCXVersion` declares the highest compatible release, allowing authors to limit execution when later gcx changes would break their extension. Both bounds are inclusive, use full semantic versions rather than range expressions, and are checked at installation and before every execution. A maximum below the minimum is invalid. Omitting the maximum imposes no upper bound. The illustrative versions are not promised release targets. The installed metadata retains both bounds so a gcx upgrade cannot bypass the compatibility check. If no platform row matches, installation fails with an error naming the current OS/architecture and listing the combinations declared in the manifest. There is no build-from-source fallback.
 
 Each downloaded binary archive must have an author-provided checksum. Authors compute it from the exact published archive using `shasum -a 256 <archive>` on macOS or `sha256sum <archive>` on Linux. Different OS/architecture binaries normally need different archives and checksums.
 
@@ -313,7 +313,7 @@ Validation must exercise the following contracts before release:
 | Contract | Required evidence |
 | --- | --- |
 | Independently owned use case | A real partner or customer authors and maintains an extension outside gcx, exercising authoring, installation, updates and authenticated calls |
-| Manifest and platform selection | Table-driven tests for integer schema versions, rejection of unsupported schema versions, required and optional fields, reserved names, inclusive minimum/maximum gcx versions at install and execution, omitted maximum, invalid bounds, each native platform, local wildcard rows, no matching artifact and rejection of manifests with both `script` and `platforms` |
+| Manifest and platform selection | Table-driven tests for integer schema versions, rejection of unsupported schema versions, required and optional fields, reserved names, inclusive minimum/maximum gcx versions at install and execution, omitted maximum, invalid bounds, each native platform, valid manifests supporting only a subset of targets, local wildcard rows, rejection of omitted targets with an error listing supported combinations, and rejection of manifests with both `script` and `platforms` |
 | Hosting independence | Install from a local git checkout and non-GitHub HTTPS/SSH repositories, including HTTPS URLs without `.git`; reject standalone manifests, archives and non-repository directories |
 | Repository revisions | Branch updates follow the recorded branch; tags and full commit IDs remain pinned; install the approved commit even if a ref moves; local installs use committed files and local branch updates without pulling a remote; preserve script executable permissions and supporting files |
 | Source trust | Reject HTTP and `git://` transports and HTTPS-to-HTTP redirects; reject credential-bearing source, artifact and redirect URLs without persisting or echoing secrets; verify HTTPS certificates and SSH host identity |
@@ -339,7 +339,7 @@ These are acceptance gaps in the proposed contract; the design choices above do 
 
 ## Future possibilities
 
-If adoption justifies them, follow-up proposals could add a discovery index (at least for extensions owned by Grafana Labs), an author scaffold, generated manifests from release output, a small helper for calling gcx and parsing results, or a metadata handshake for agent discovery. None is a dependency of the initial extension mechanism.
+If adoption justifies them, follow-up proposals could add a discovery index, search for Grafana-owned extensions, an author scaffold, generated manifests from release output, a small helper for calling gcx and parsing results, or a metadata handshake for agent discovery. None is a dependency of the initial extension mechanism.
 
 ## Terminology
 
