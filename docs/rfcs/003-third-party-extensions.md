@@ -50,7 +50,7 @@ gcx ext update --all
 gcx ext uninstall acme-widgets
 ```
 
-Updating reinstalls from the recorded source. A git source or a manifest URL at a floating location can publish a newer version there. A manifest URL pinned to a release stays pinned; gcx does not search for newer tags or releases. Users reinstall from a different source to change that choice. Removal deletes the installed extension and its index entry.
+Updating reinstalls from the recorded source. A git source or a manifest URL at a floating location can publish a newer version there. A manifest URL pinned to a release stays pinned; gcx does not search for newer tags or releases. The fetched manifest must retain the installed extension name; a mismatch fails without changing either installation. Users change the source through an explicit install operation whose replacement plan shows the previous and proposed sources before approval. Removal deletes the installed extension and its index entry.
 
 ### Develop locally
 
@@ -69,7 +69,9 @@ A platform row may point to a binary relative to the manifest using `path`, inst
 
 `ext` is a tooling area alongside `config` and `dev`. CLI wiring belongs in `cmd/gcx/ext`; manifest, installation, index and execution logic belong in `internal/ext`, following the [layer boundaries](../../CONSTITUTION.md#architecture-invariants).
 
-The built-in subcommands are `install`, `list`, `uninstall` and `update`. Other first arguments are looked up as installed extension names. These management names are reserved and rejected at installation; names that collide with built-in help behavior must also be covered by validation. There is no separate `run` verb and no top-level `gcx <extension-name>` dispatch.
+The built-in subcommands are `install`, `list`, `uninstall` and `update`. Other first arguments are looked up as installed extension names. Installation rejects the reserved names `install`, `list`, `uninstall`, `update` and `help`, plus `search` and `scaffold` for possible future management commands. Reserving a name does not commit to implementing that command. There is no separate `run` verb and no top-level `gcx <extension-name>` dispatch.
+
+The `ext` area prevents collisions with top-level gcx commands, but management verbs and extension names still share the namespace immediately below it. The reserved set is fixed for the current major version: adding a management command must not make a previously valid extension invocation unreachable. For example, reserving `search` now permits a later `gcx ext search` without hiding an installed extension.
 
 The fallback dispatcher is classified as `raw` under the [agent output protocol](../design/agent-mode.md). It forwards the extension's streams and exit status without wrapping its output or claiming that it obeys gcx's finite JSON contract. Management commands remain gcx-owned commands with their own declared output classes and normal structured errors. An extension need not match gcx's table formatting or color conventions.
 
@@ -115,7 +117,9 @@ A script manifest uses `script: hello.sh` instead of the platform table. gcx run
 
 ### Installation sources and local state
 
-`gcx ext install <source>` accepts a local path, including a directory or archive, a direct manifest URL, or a git URL. Git sources use the user's installed `git` and its existing authentication; there is no GitHub API dependency or required hosting service. HTTP downloads use gcx's shared HTTP infrastructure.
+`gcx ext install <source>` accepts a local path, including a directory or archive, a direct manifest URL, or a git URL. Git sources use the user's installed `git` and its existing authentication; there is no GitHub API dependency or required hosting service. Remote manifests require HTTPS with certificate verification, and redirects must not downgrade to HTTP. Remote git sources use HTTPS or SSH with server identity verification; unauthenticated transports such as `git://` are unsupported. Downloads use gcx's shared HTTP infrastructure. A checksum from a manifest is useful only if the manifest itself arrived through a trusted transport.
+
+Source, artifact and redirect URLs containing embedded credentials are rejected before use, persistence or display. This includes HTTP user information, access tokens and presigned authentication parameters; errors must not echo the rejected URL. SSH usernames identify the remote account and are allowed, but embedded passwords are not. The index and install/list output contain credential-free locations only. Private git sources use the user's existing git authentication; v1 adds no URL-based credential storage.
 
 The extension directory follows the [configuration directory convention](../../internal/config/loader.go), normally `~/.config/gcx/extensions/`, with a proposed `GCX_EXTENSIONS_DIR` override. Payloads live under `<name>/<version>/`. A single `index.json` records each extension's name, version, description, source, executable path and installation time, plus the information needed to honor its telemetry setting.
 
@@ -126,6 +130,8 @@ The installation pipeline resolves the source, validates the manifest and gcx ve
 ### Calling gcx from an extension
 
 An extension reaches Grafana or Cloud by invoking the same gcx binary that launched it. This reuses the existing config, authentication and refresh behavior rather than introducing an extension credential API.
+
+gcx launches the installed executable by its recorded path while preserving the caller's working directory. This keeps relative input paths such as `./widgets.yaml` meaningful and lets child gcx calls discover the same local `.gcx.yaml`. An extension that changes its own working directory must restore the invocation directory for callbacks that rely on local config discovery.
 
 | Environment variable | Proposed value |
 | --- | --- |
@@ -207,11 +213,12 @@ This conversion carries forward design conclusions from the earlier extension pr
 | Independently owned use case | A real partner or customer authors and maintains an extension outside gcx, exercising authoring, installation, updates and authenticated calls. The Azure onboarding prototype tests the mechanism but does not establish this independently owned workflow |
 | Manifest and platform selection | Table-driven tests for required fields, reserved names, minimum gcx version, each native platform, local wildcard rows and no matching artifact |
 | Hosting independence | Install from a local directory/archive, a static manifest host and a non-GitHub git repository without host-specific APIs |
+| Source trust | Reject HTTP manifests, HTTPS-to-HTTP redirects and unauthenticated remote git transports; reject credential-bearing source, artifact and redirect URLs without persisting or echoing secrets |
 | Artifact integrity | Missing and incorrect remote checksums fail without a runnable registration; archive entries cannot escape the installation directory |
-| Installation state | Failed updates preserve the runnable installation; simultaneous mutations do not corrupt or lose index entries |
+| Installation state | Failed updates and manifest-name mismatches preserve existing installations; explicit source replacement presents both sources for approval; simultaneous mutations do not corrupt or lose index entries |
 | Approval | Interactive decline returns cancellation; agent mode requires the documented bypass; no extension code runs during install |
-| Argument and process behavior | Global flags before `ext`, verbatim child arguments, reserved-name handling, inherited streams, nonzero child exits and interruption |
-| Context and authentication | Use contexts pointing to different test destinations and a separate explicit config file; child calls retain the selected target, auth refresh and resolved agent mode |
+| Argument and process behavior | Global flags before `ext`, verbatim child arguments, preserved working directory and relative inputs, reserved-name handling, inherited streams, nonzero child exits and interruption; new management commands cannot hide previously valid extension names |
+| Context and authentication | Use contexts pointing to different test destinations, a separate explicit config file and a local `.gcx.yaml` that overrides a context of the same name; child calls retain the selected target, local config discovery, auth refresh and resolved agent mode |
 | Output consumption | An example extension explicitly requests JSON and handles a structured partial failure on stdout despite exit 4 |
 | Telemetry | Global opt-out, author opt-out and unmatched names cannot leak names or arguments through command, flag, error or other fields |
 | Portability | Compiled execution across all six native targets, documented script/interpreter behavior, and a defined `wasip1` command surface |
