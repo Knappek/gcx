@@ -36,7 +36,7 @@ gcx ext list
 gcx --context staging ext acme-widgets sync ./widgets.yaml --dry-run
 ```
 
-Installation presents the extension's name, version, homepage, artifact location and checksum before asking for confirmation. The help and confirmation explain that the program is unaudited and will run with the user's permissions. Approval uses `--force` or enabled `GCX_AUTO_APPROVE`, following the existing [confirmation convention](../design/safety.md); a new `--yes` alias is not proposed. Installation does not execute extension code or author-supplied install hooks.
+Installation presents the extension's name, version, homepage, artifact location and checksum before asking for confirmation. The help and confirmation disclose the [shared responsibility model](#shared-responsibility-and-user-disclosures): the program is unaudited, runs with the user's permissions and is used at the user's own risk. Approval uses `--force` or enabled `GCX_AUTO_APPROVE`, following the existing [confirmation convention](../design/safety.md); a new `--yes` alias is not proposed. Installation does not execute extension code or author-supplied install hooks.
 
 `gcx ext list` shows the installed name, version, source and description. `gcx ext --help` also lists installed extensions from the local index without running them.
 
@@ -211,6 +211,33 @@ An installed extension runs with the user's permissions and inherits the parent'
 
 An author who needs a raw credential for a separate SDK receives no new API for that in this design. A future credential mechanism would need its own justification and review.
 
+### Shared responsibility and user disclosures
+
+Third-party extensions are independently supplied software. Installing, listing or running one through gcx does not mean that Grafana or the gcx maintainers have reviewed, approved, endorsed or agreed to support its contents. The contents and behavior of a third-party extension, and the consequences of choosing to run it, are outside the responsibility of gcx maintainers. This boundary applies to every supported distribution method, including the repository-only alternative below.
+
+| Party | Responsibility |
+| --- | --- |
+| Extension author | Own the extension's code, dependencies, behavior, documentation and support, including any telemetry it collects |
+| User or operating organisation | Decide whether to trust the author and code, review what is installed or updated, choose the permissions and credentials available to it, and accept the consequences of running it, including through an agent or automation |
+| gcx maintainers | Maintain the documented installer and dispatcher behavior, including transport checks, artifact verification, safe installation, context propagation and disclosures; these mechanisms do not make third-party code safe or transfer responsibility for its contents to gcx |
+
+An extension can act with the user's local permissions and available API access. Users must understand that it can read or change files, access available secrets, make network requests and modify remote resources. Checksums establish artifact integrity; they do not establish safety or publisher trust. The responsibility boundary does not excuse defects in gcx's own installer or dispatcher.
+
+Before the feature ships, publish a user-facing extension guide covering this model, the trust and credential boundaries, author support ownership, and the limits of gcx's checks. Link it from the normal user documentation navigation and `gcx ext --help`; an RFC alone is not sufficient disclosure. Both the guide and command help must state that users run third-party extensions at their own risk and that gcx maintainers are not responsible for their contents or the consequences of running them.
+
+The CLI must surface the model at the points where users acquire or execute code:
+
+- `gcx ext --help` and install/update help include the responsibility statement and a link to the user guide.
+- Install and update plans identify the extension name, version and source and display the statement before approval. Updates repeat it because they introduce new code, even when the publisher is unchanged.
+- Each `gcx ext <name>` invocation emits a brief notice identifying the third-party extension and the user's responsibility before starting the process. This is a diagnostic on stderr; stdout remains extension-owned output. It does not introduce an additional execution confirmation prompt.
+- Notices remain visible in agent and non-interactive use. `--force` and `GCX_AUTO_APPROVE` bypass confirmation only; they do not suppress disclosure.
+
+The install/update statement should use direct language, for example:
+
+> This is a third-party extension. Grafana and the gcx maintainers do not review, endorse or support its contents and are not responsible for the consequences of running it. It runs with your permissions and available credentials. You are responsible for reviewing it and use it at your own risk.
+
+The execution notice may be shorter while preserving the boundary, for example: `running third-party extension <name> (<version>) at your own risk; gcx does not review or support its contents`. gcx-owned notices use the shared diagnostic output facilities and must never be mixed into extension stdout or the structured results of management commands.
+
 ### Usage telemetry
 
 gcx records `gcx ext <name>` through the existing [telemetry pipeline](../../internal/telemetry/event.go). A name is eligible only after it matches an installed index entry; unmatched text is discarded. Arguments and extension flag values are never recorded. Names are plain text so usage can be attributed to individual extensions.
@@ -262,6 +289,7 @@ This conversion carries forward design conclusions from the earlier extension pr
 | Artifact integrity | Package and install the documented script example; verify its checksum and executable entry point; missing or incorrect remote checksums and remote `script`/`path` shortcuts fail without a runnable registration; archive entries cannot escape the installation directory |
 | Installation state | Failed updates and manifest-name mismatches preserve existing installations; explicit source replacement presents both sources for approval; simultaneous mutations do not corrupt or lose index entries |
 | Approval | Interactive decline returns cancellation; agent mode requires the documented bypass; no extension code runs during install |
+| Responsibility disclosures | The user guide and help contain the responsibility model; install/update plans and each execution show the required notice, including agent and auto-approved paths; diagnostics stay on stderr without changing structured or extension stdout |
 | Argument and process behavior | Global flags before `ext`, verbatim child arguments, preserved working directory and relative inputs, reserved-name handling, inherited streams, nonzero child exits and interruption; new management commands cannot hide previously valid extension names |
 | Context and authentication | Verify flag/environment/current-context precedence, absolute explicit-file propagation, preserved layering and local config discovery, missing-context failure, auth refresh and resolved agent mode; changing the selected context between child calls is observed, while changing only `current-context` does not redirect them |
 | Output consumption | An example extension explicitly requests JSON and handles a structured partial failure on stdout despite exit 4 |
