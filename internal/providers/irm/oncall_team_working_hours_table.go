@@ -23,6 +23,30 @@ func (o *workingHoursGetOpts) setup(flags *pflag.FlagSet) {
 	o.IO.BindFlags(flags)
 }
 
+// workingHoursUpdateOpts holds the flags of update-working-hours. Like
+// get-working-hours it prints the stored hours as a weekly grid by default.
+type workingHoursUpdateOpts struct {
+	IO   cmdio.Options
+	File string
+}
+
+func (o *workingHoursUpdateOpts) setup(flags *pflag.FlagSet) {
+	cmdio.RegisterTable(&o.IO, workingHoursTable())
+	o.IO.DefaultFormat("table")
+	o.IO.BindFlags(flags)
+	flags.StringVarP(&o.File, "filename", "f", "", "File containing the resource definition (JSON/YAML, use - for stdin)")
+}
+
+// encodeWorkingHours writes a working-hours document in the format that the
+// command asked for: the weekly grid for "table", the document itself for
+// every other format.
+func encodeWorkingHours(opts *cmdio.Options, w io.Writer, doc map[string]any) error {
+	if opts.OutputFormat == "table" {
+		return opts.Encode(w, workingHoursRows(doc))
+	}
+	return opts.Encode(w, doc)
+}
+
 // workingHoursRow is one interval of a team's business hours, with the time
 // ranges of each weekday rendered for display.
 type workingHoursRow struct {

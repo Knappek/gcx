@@ -188,3 +188,36 @@ func TestTeamGetWorkingHoursTableEmpty(t *testing.T) {
 		t.Errorf("expected an explicit null document, got %v", got)
 	}
 }
+
+func TestTeamUpdateWorkingHoursPrintsGridByDefault(t *testing.T) {
+	resetAgentMode(t)
+
+	file := filepath.Join(t.TempDir(), "hours.yaml")
+	doc := `irm_working_hours:
+  - name: Office hours
+    irm_working_hours:
+      monday: [{start: "09:00:00", end: "17:00:00"}]
+`
+	if err := os.WriteFile(file, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runTeamsCmd(t, &fakeTeamAPI{}, "update-working-hours", "T1", "-f", file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"INTERVAL", "MON", "Office hours", "09:00-17:00"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("grid is missing %q:\n%s", want, out)
+		}
+	}
+
+	// The document formats still emit the stored document.
+	out, err = runTeamsCmd(t, &fakeTeamAPI{}, "update-working-hours", "T1", "-f", file, "-o", "yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "irm_working_hours:") || strings.Contains(out, "INTERVAL") {
+		t.Errorf("expected the YAML document, got:\n%s", out)
+	}
+}

@@ -42,11 +42,7 @@ back through update-working-hours.`,
 				return err
 			}
 
-			// The table codec renders rows; every other format renders the document.
-			if opts.IO.OutputFormat == "table" {
-				return opts.IO.Encode(cmd.OutOrStdout(), workingHoursRows(hours))
-			}
-			return opts.IO.Encode(cmd.OutOrStdout(), hours)
+			return encodeWorkingHours(&opts.IO, cmd.OutOrStdout(), hours)
 		},
 	}
 	opts.setup(cmd.Flags())
@@ -54,7 +50,7 @@ back through update-working-hours.`,
 }
 
 func newTeamUpdateWorkingHoursCmd(loader OnCallConfigLoader) *cobra.Command {
-	opts := &mutateOpts{}
+	opts := &workingHoursUpdateOpts{}
 	cmd := &cobra.Command{
 		Use:   "update-working-hours <id>",
 		Short: "Replace the business hours of a team.",
@@ -80,7 +76,8 @@ Example file:
         saturday:  []
         sunday:    []
 
-The command emits the stored document.`,
+The command prints the stored hours as a weekly grid. Use -o yaml or -o json
+to emit the stored document instead.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := opts.IO.Validate(); err != nil {
@@ -106,7 +103,7 @@ The command emits the stored document.`,
 				return err
 			}
 
-			return opts.IO.Encode(cmd.OutOrStdout(), stored)
+			return encodeWorkingHours(&opts.IO, cmd.OutOrStdout(), stored)
 		},
 	}
 	opts.setup(cmd.Flags())

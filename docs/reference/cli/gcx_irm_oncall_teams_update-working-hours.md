@@ -26,7 +26,8 @@ Example file:
         saturday:  []
         sunday:    []
 
-The command emits the stored document.
+The command prints the stored hours as a weekly grid. Use -o yaml or -o json
+to emit the stored document instead.
 
 ```
 gcx irm oncall teams update-working-hours <id> [flags]
@@ -39,7 +40,7 @@ gcx irm oncall teams update-working-hours <id> [flags]
   -h, --help              help for update-working-hours
       --jq string         jq expression to apply to JSON output. Mutually exclusive with --json.
       --json string       Comma-separated list of fields to include in JSON output, or 'list' (or '?') to discover available fields
-  -o, --output string     Output format. One of: agents, json, yaml (default "yaml")
+  -o, --output string     Output format. One of: agents, json, table, yaml (default "table")
 ```
 
 ### Options inherited from parent commands
