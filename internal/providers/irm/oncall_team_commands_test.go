@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -112,5 +113,28 @@ func TestTeamUpdateWorkingHoursClear(t *testing.T) {
 	}
 	if v, ok := fake.gotHours["irm_working_hours"]; !ok || v != nil {
 		t.Errorf("expected an explicit null to reach the backend, got %v", fake.gotHours)
+	}
+}
+
+func TestTeamUpdateWorkingHoursRejectsInvalidBeforeCallingBackend(t *testing.T) {
+	resetAgentMode(t)
+
+	file := filepath.Join(t.TempDir(), "bad.yaml")
+	doc := `irm_working_hours:
+  - name: Office hours
+    irm_working_hours:
+      monday: [{start: "17:00:00", end: "09:00:00"}]
+`
+	if err := os.WriteFile(file, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fake := &fakeTeamAPI{}
+	_, err := runTeamsCmd(t, fake, "update-working-hours", "T1", "-f", file)
+	if err == nil || !strings.Contains(err.Error(), "must be before end") {
+		t.Fatalf("expected a validation error, got %v", err)
+	}
+	if fake.gotID != "" {
+		t.Errorf("the backend must not be called for an invalid document, got a call for %q", fake.gotID)
 	}
 }

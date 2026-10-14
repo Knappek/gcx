@@ -87,6 +87,10 @@ The command emits the stored document.`,
 				return err
 			}
 
+			if err := validateTeamWorkingHours(hours); err != nil {
+				return err
+			}
+
 			client, _, err := loader.LoadOnCallClient(cmd.Context())
 			if err != nil {
 				return err

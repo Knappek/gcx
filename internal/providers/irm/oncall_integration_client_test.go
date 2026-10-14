@@ -3,11 +3,13 @@ package irm_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/grafana/gcx/internal/gcxerrors"
 	"github.com/grafana/gcx/internal/providers/irm"
 )
 
@@ -246,13 +248,63 @@ func TestGetTeamWorkingHours(t *testing.T) {
 func TestGetTeamWorkingHoursNotFound(t *testing.T) {
 	t.Parallel()
 
+	// The backend answers a missing team with a JSON detail body.
 	client := newTestOnCallClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"detail":"Not found."}`)) //nolint:errcheck
 	}))
 
 	_, err := client.GetTeamWorkingHours(context.Background(), "missing")
-	if err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Errorf("expected a not-found error, got %v", err)
+	var detailed *gcxerrors.DetailedError
+	if !errors.As(err, &detailed) {
+		t.Fatalf("expected a DetailedError, got %T: %v", err, err)
+	}
+	if want := `Team "missing" not found`; detailed.Summary != want {
+		t.Errorf("got summary %q, want %q", detailed.Summary, want)
+	}
+	if len(detailed.Suggestions) == 0 || !strings.Contains(detailed.Suggestions[0], "teams list") {
+		t.Errorf("expected a suggestion to list teams, got %v", detailed.Suggestions)
+	}
+	if detailed.ExitCode == nil || *detailed.ExitCode != gcxerrors.ExitUsageError {
+		t.Errorf("expected the usage exit code, got %v", detailed.ExitCode)
+	}
+}
+
+func TestGetTeamWorkingHoursUnsupportedBackend(t *testing.T) {
+	t.Parallel()
+
+	// A backend that predates the endpoint answers with a bare HTML 404 page,
+	// which must not be mistaken for a missing team.
+	client := newTestOnCallClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("<html><body>Not Found</body></html>")) //nolint:errcheck
+	}))
+
+	_, err := client.GetTeamWorkingHours(context.Background(), "T1")
+	var detailed *gcxerrors.DetailedError
+	if !errors.As(err, &detailed) {
+		t.Fatalf("expected a DetailedError, got %T: %v", err, err)
+	}
+	if !strings.Contains(detailed.Summary, "does not support team working hours") {
+		t.Errorf("unexpected summary %q", detailed.Summary)
+	}
+}
+
+func TestUpdateTeamWorkingHoursNotFound(t *testing.T) {
+	t.Parallel()
+
+	client := newTestOnCallClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"detail":"Not found."}`)) //nolint:errcheck
+	}))
+
+	_, err := client.UpdateTeamWorkingHours(context.Background(), "missing", map[string]any{"irm_working_hours": nil})
+	var detailed *gcxerrors.DetailedError
+	if !errors.As(err, &detailed) || detailed.Summary != `Team "missing" not found` {
+		t.Errorf("expected a team-not-found error, got %v", err)
 	}
 }
 

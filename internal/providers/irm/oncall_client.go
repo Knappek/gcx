@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/grafana/gcx/internal/config"
+	"github.com/grafana/gcx/internal/gcxerrors"
 	"github.com/grafana/gcx/internal/providers"
 	"k8s.io/client-go/rest"
 )
@@ -786,6 +787,33 @@ func teamWorkingHoursPath(id string) string {
 	return teamsPath + url.PathEscape(id) + "/working_hours/"
 }
 
+// teamWorkingHoursNotFound turns a 404 from the working-hours endpoint into a
+// helpful error. The backend answers a missing team with a JSON
+// {"detail": "Not found."} body, while a backend that predates the endpoint
+// answers with a bare HTML 404 page, so the two are told apart by the body.
+func teamWorkingHoursNotFound(resp *http.Response, id string) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+
+	var detail struct {
+		Detail string `json:"detail"`
+	}
+	if json.Unmarshal(body, &detail) == nil && detail.Detail != "" {
+		return &gcxerrors.DetailedError{
+			Summary:     fmt.Sprintf("Team %q not found", id),
+			Suggestions: []string{"List the teams and their IDs with: gcx irm oncall teams list"},
+			ExitCode:    new(gcxerrors.ExitUsageError),
+		}
+	}
+
+	return &gcxerrors.DetailedError{
+		Summary: "This IRM backend does not support team working hours",
+		Details: "The teams/<id>/working_hours/ endpoint does not exist on the stack.",
+		Suggestions: []string{
+			"Team working hours need a newer IRM version; upgrade the stack and try again",
+		},
+	}
+}
+
 // GetTeamWorkingHours returns the business hours of a team.
 //
 // The document is {"irm_working_hours": [...]}: a list of named intervals,
@@ -800,7 +828,7 @@ func (c *OnCallClient) GetTeamWorkingHours(ctx context.Context, id string) (map[
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("irm: team %q not found", id)
+		return nil, teamWorkingHoursNotFound(resp, id)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, providers.HandleErrorResponse(resp)
@@ -829,7 +857,7 @@ func (c *OnCallClient) UpdateTeamWorkingHours(ctx context.Context, id string, ho
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("irm: team %q not found", id)
+		return nil, teamWorkingHoursNotFound(resp, id)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, providers.HandleErrorResponse(resp)
