@@ -213,6 +213,18 @@ func collectN[T any](it iter.Seq2[T, error], n int) ([]T, error) {
 	return items, nil
 }
 
+// resourceNotFoundError reports that the API has no resource with the given ID.
+// Callers that need to tell "no such resource" from other failures match it with
+// errors.As.
+type resourceNotFoundError struct {
+	resourceType string
+	id           string
+}
+
+func (e *resourceNotFoundError) Error() string {
+	return fmt.Sprintf("irm: %s %q not found", e.resourceType, e.id)
+}
+
 func getResource[T any](ctx context.Context, c *OnCallClient, basePath, id, resourceType string) (*T, error) {
 	resp, err := c.DoRequest(ctx, http.MethodGet, fmt.Sprintf("%s%s/", basePath, url.PathEscape(id)), nil)
 	if err != nil {
@@ -221,7 +233,7 @@ func getResource[T any](ctx context.Context, c *OnCallClient, basePath, id, reso
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("irm: %s %q not found", resourceType, id)
+		return nil, &resourceNotFoundError{resourceType: resourceType, id: id}
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, providers.HandleErrorResponse(resp)

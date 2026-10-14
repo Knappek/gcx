@@ -24,5 +24,7 @@ Manage OnCall teams.
 
 * [gcx irm oncall](gcx_irm_oncall.md)	 - Manage Grafana OnCall resources.
 * [gcx irm oncall teams get](gcx_irm_oncall_teams_get.md)	 - Get a team by ID.
+* [gcx irm oncall teams get-working-hours](gcx_irm_oncall_teams_get-working-hours.md)	 - Get the business hours of a team.
 * [gcx irm oncall teams list](gcx_irm_oncall_teams_list.md)	 - List OnCall teams.
+* [gcx irm oncall teams update-working-hours](gcx_irm_oncall_teams_update-working-hours.md)	 - Replace the business hours of a team.
 
