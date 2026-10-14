@@ -72,7 +72,7 @@ gcx/
 │   │   │   └── settings/     # PluginSettings
 │   │   ├── dbo11y/           # Database Observability provider (query/discovery views, no CRUD resources)
 │   │   │   └── instances/    # Instance inventory + health/query-performance snapshot from postgres_exporter + pg_stat_statements
-│   │   ├── alert/            # Alert provider (rules, groups, provisioning, native routing trees)
+│   │   ├── alert/            # Alert provider (rules, groups, provisioning, native routing trees/time intervals/template groups)
 │   │   ├── assistant/        # Assistant provider — lift-and-shift of the `gcx assistant` command tree; TypedRegistrations() registers MCPServer and read-only Watcher adapters; watcher commands live in internal/providers/assistant/watchers/; exports ResolveClientOptions and RequireGrafanaCloud for other command trees embedding Assistant calls (used by `instrumentation check --fix-plan=assistant`)
 │   │   ├── dashboards/       # Dashboards provider (CRUD, search, version history, snapshot) — CLI: `gcx dashboards`
 │   │   │   ├── descriptor/   # Descriptor helpers (GVK, preferred version resolution)
