@@ -307,3 +307,55 @@ func TestPromRulesCreate_DryRun_NoChanges(t *testing.T) {
 	assert.Empty(t, stdout.String(), "identical config (including for:) must produce no diff")
 	assert.False(t, writeHit, "dry-run must not write")
 }
+
+// --skip-promql-validation (prom-rules only) is forwarded to the backend as the
+// skipPromQLValidation query parameter on both the validate-sync call (dry-run)
+// and the real PUT.
+func TestPromRulesUpsert_SkipPromQLValidation(t *testing.T) {
+	tests := []struct {
+		name         string
+		args         []string
+		wantMethod   string
+		wantPathTail string
+		wantParam    string
+	}{
+		{name: "dry-run without flag", args: []string{"--dry-run"}, wantMethod: http.MethodPost, wantPathTail: "prom-rules-validate-sync", wantParam: ""},
+		{name: "dry-run with flag", args: []string{"--dry-run", "--skip-promql-validation"}, wantMethod: http.MethodPost, wantPathTail: "prom-rules-validate-sync", wantParam: "true"},
+		{name: "upsert without flag", args: nil, wantMethod: http.MethodPut, wantPathTail: "prom-rules", wantParam: ""},
+		{name: "upsert with flag", args: []string{"--skip-promql-validation"}, wantMethod: http.MethodPut, wantPathTail: "prom-rules", wantParam: "true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotParam, sawTarget := "", false
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == tt.wantMethod && strings.HasSuffix(r.URL.Path, tt.wantPathTail) {
+					sawTarget = true
+					gotParam = r.URL.Query().Get("skipPromQLValidation")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte("{}"))
+			}))
+			defer server.Close()
+
+			var stdout, stderr bytes.Buffer
+			cmd := kg.NewPromRulesCommand(writeLoaderFor(server))
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			cmd.SetArgs(append([]string{"upsert", "-f", "-", "-o", "json"}, tt.args...))
+			cmd.SetIn(bytes.NewBufferString(localPromRulesYAML))
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+
+			require.NoError(t, cmd.Execute())
+			require.True(t, sawTarget, "expected %s .../%s to be called", tt.wantMethod, tt.wantPathTail)
+			assert.Equal(t, tt.wantParam, gotParam)
+		})
+	}
+}
+
+func TestModelRulesUpsert_HasNoSkipPromQLValidationFlag(t *testing.T) {
+	cmd := kg.NewModelRulesCommand(writeLoaderFor(httptest.NewServer(http.NotFoundHandler())))
+	upsert, _, err := cmd.Find([]string{"upsert"})
+	require.NoError(t, err)
+	assert.Nil(t, upsert.Flags().Lookup("skip-promql-validation"))
+}

@@ -120,9 +120,25 @@ func NewClient(cfg config.NamespacedRESTConfig) (*Client, error) {
 // Configuration upload operations
 // ---------------------------------------------------------------------------
 
-// UploadPromRules uploads Prometheus recording rules.
-func (c *Client) UploadPromRules(ctx context.Context, yamlContent string) error {
-	return c.DoYAML(ctx, http.MethodPut, rulesPath, yamlContent)
+// UploadPromRules uploads Prometheus recording rules. When skipPromQLValidation
+// is true the backend skips executing each expression against the tenant's TSDB
+// (the local parse and Asserts metadata checks still run); use it for rules too
+// expensive to validate within the request timeout.
+func (c *Client) UploadPromRules(ctx context.Context, yamlContent string, skipPromQLValidation bool) error {
+	return c.DoYAML(ctx, http.MethodPut, withSkipPromQLValidation(rulesPath, skipPromQLValidation), yamlContent)
+}
+
+// skipPromQLValidationParam is the query parameter that makes the prom-rules PUT
+// and validate-sync endpoints skip remote PromQL validation.
+const skipPromQLValidationParam = "skipPromQLValidation"
+
+// withSkipPromQLValidation appends the backend's skipPromQLValidation query
+// parameter to path when skip is true, and returns path unchanged otherwise.
+func withSkipPromQLValidation(path string, skip bool) string {
+	if !skip {
+		return path
+	}
+	return path + "?" + url.Values{skipPromQLValidationParam: {"true"}}.Encode()
 }
 
 // GetPromRulesSchema fetches the live JSON Schema for the Prometheus rules config from the backend.
@@ -426,9 +442,11 @@ func (c *Client) ValidateModelRules(ctx context.Context, yamlContent string) err
 // ValidatePromRules checks a Custom Prometheus rules configuration against the
 // backend's synchronous validate-only endpoint (prom-rules-validate-sync, distinct
 // from the orphaned async prom-rules-validate) without persisting anything. It
-// accepts the same YAML payload as create.
-func (c *Client) ValidatePromRules(ctx context.Context, yamlContent string) error {
-	return c.validateConfig(ctx, rulesValidateSyncPath, "application/x-yaml", []byte(yamlContent), "prom rules")
+// accepts the same YAML payload as create. skipPromQLValidation has the same
+// meaning as for UploadPromRules.
+func (c *Client) ValidatePromRules(ctx context.Context, yamlContent string, skipPromQLValidation bool) error {
+	path := withSkipPromQLValidation(rulesValidateSyncPath, skipPromQLValidation)
+	return c.validateConfig(ctx, path, "application/x-yaml", []byte(yamlContent), "prom rules")
 }
 
 // validateConfig POSTs a payload to a validate-only endpoint and maps the

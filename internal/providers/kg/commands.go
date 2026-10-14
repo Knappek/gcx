@@ -529,9 +529,13 @@ func newRulesCommand(loader RESTConfigLoader) *cobra.Command {
 		`  gcx kg prom-rules upsert -f rules.yaml
 
   # Validate against the backend and preview the diff without uploading:
-  gcx kg prom-rules upsert -f rules.yaml --dry-run`,
+  gcx kg prom-rules upsert -f rules.yaml --dry-run
+
+  # Skip remote PromQL validation for rules too expensive to validate in time:
+  gcx kg prom-rules upsert -f rules.yaml --skip-promql-validation`,
 		Kind,
 		"Knowledge Graph rules uploaded",
+		true,
 		runPromRulesDryRun,
 		(*Client).UploadPromRules,
 	)
@@ -680,8 +684,13 @@ func newModelRulesCommand(loader RESTConfigLoader) *cobra.Command {
   gcx kg model-rules upsert -f model-rules.yaml --dry-run`,
 		"ModelRules",
 		"Model rules uploaded",
-		runModelRulesDryRun,
-		(*Client).UploadModelRules,
+		false,
+		func(cmd *cobra.Command, ioOpts *cmdio.Options, client *Client, data []byte, _ bool) error {
+			return runModelRulesDryRun(cmd, ioOpts, client, data)
+		},
+		func(client *Client, ctx context.Context, yamlContent string, _ bool) error {
+			return client.UploadModelRules(ctx, yamlContent)
+		},
 	)
 
 	listOpts := &modelRulesListOpts{}
@@ -1398,14 +1407,20 @@ func unifiedYAMLDiff(remote, local string) (string, error) {
 // ---------------------------------------------------------------------------
 
 type rulesCreateOpts struct {
-	File   string
-	DryRun bool
-	IO     cmdio.Options
+	File                 string
+	DryRun               bool
+	SkipPromQLValidation bool
+	IO                   cmdio.Options
 }
 
-func (o *rulesCreateOpts) setup(flags *pflag.FlagSet, successMsg string) {
+func (o *rulesCreateOpts) setup(flags *pflag.FlagSet, successMsg string, withSkipPromQLValidation bool) {
 	flags.StringVarP(&o.File, "file", "f", "", "Input file (YAML), or '-' for stdin.")
 	flags.BoolVar(&o.DryRun, "dry-run", false, "Validate against the backend and show a diff without uploading.")
+	if withSkipPromQLValidation {
+		flags.BoolVar(&o.SkipPromQLValidation, "skip-promql-validation", false,
+			"Skip the backend's remote PromQL validation (each expression is otherwise executed against the stack's "+
+				"metrics datasource). Use for expensive rules that time out; syntax and Asserts metadata checks still run.")
+	}
 	o.IO.RegisterCustomCodec("text", &RulesDryRunTextCodec{SuccessMsg: successMsg})
 	o.IO.DefaultFormat("text")
 	o.IO.BindFlags(flags)
@@ -1416,12 +1431,15 @@ func (o *rulesCreateOpts) setup(flags *pflag.FlagSet, successMsg string) {
 // stdin) and both support --dry-run (validate + client-side diff, no writes).
 // dryRun runs the validate/diff path; upload performs the real PUT; kind names
 // the mutated resource in the result document and successMsg is the human
-// one-liner printed after a real upsert.
+// one-liner printed after a real upsert. withSkipPromQLValidation registers
+// --skip-promql-validation and passes its value to dryRun and upload; commands
+// without the flag always receive false.
 func newRulesUpsertCommand(
 	loader RESTConfigLoader,
 	short, example, kind, successMsg string,
-	dryRun func(cmd *cobra.Command, ioOpts *cmdio.Options, client *Client, data []byte) error,
-	upload func(client *Client, ctx context.Context, yamlContent string) error,
+	withSkipPromQLValidation bool,
+	dryRun func(cmd *cobra.Command, ioOpts *cmdio.Options, client *Client, data []byte, skipPromQLValidation bool) error,
+	upload func(client *Client, ctx context.Context, yamlContent string, skipPromQLValidation bool) error,
 ) *cobra.Command {
 	opts := &rulesCreateOpts{}
 	createCmd := &cobra.Command{
@@ -1445,16 +1463,16 @@ func newRulesUpsertCommand(
 				return err
 			}
 			if opts.DryRun {
-				return dryRun(cmd, &opts.IO, client, data)
+				return dryRun(cmd, &opts.IO, client, data, opts.SkipPromQLValidation)
 			}
-			if err := upload(client, cmd.Context(), string(data)); err != nil {
+			if err := upload(client, cmd.Context(), string(data), opts.SkipPromQLValidation); err != nil {
 				return err
 			}
 			return opts.IO.Encode(cmd.OutOrStdout(),
 				cmdio.NewSingleMutation("upserted", cmdio.MutationTarget{Kind: kind}))
 		},
 	}
-	opts.setup(createCmd.Flags(), successMsg)
+	opts.setup(createCmd.Flags(), successMsg, withSkipPromQLValidation)
 	_ = createCmd.MarkFlagRequired("file")
 	return createCmd
 }
@@ -1521,7 +1539,7 @@ func runModelRulesDryRun(cmd *cobra.Command, ioOpts *cmdio.Options, client *Clie
 }
 
 // runPromRulesDryRun is the prom-rules counterpart to runModelRulesDryRun.
-func runPromRulesDryRun(cmd *cobra.Command, ioOpts *cmdio.Options, client *Client, data []byte) error {
+func runPromRulesDryRun(cmd *cobra.Command, ioOpts *cmdio.Options, client *Client, data []byte, skipPromQLValidation bool) error {
 	ctx := cmd.Context()
 
 	var local Rule
@@ -1532,7 +1550,7 @@ func runPromRulesDryRun(cmd *cobra.Command, ioOpts *cmdio.Options, client *Clien
 		return errors.New("prom-rules file has no name")
 	}
 
-	if err := client.ValidatePromRules(ctx, string(data)); err != nil {
+	if err := client.ValidatePromRules(ctx, string(data), skipPromQLValidation); err != nil {
 		return err
 	}
 
