@@ -11,7 +11,7 @@ import (
 // CONSTITUTION.md.
 
 func newTeamGetWorkingHoursCmd(loader OnCallConfigLoader) *cobra.Command {
-	opts := &getOpts{}
+	opts := &workingHoursGetOpts{}
 	cmd := &cobra.Command{
 		Use:   "get-working-hours <id>",
 		Short: "Get the business hours of a team.",
@@ -22,9 +22,10 @@ to three time ranges per weekday. A team is in business hours when the current
 time falls inside any of its intervals; the "pause escalation until team's
 working hours" escalation step waits for that moment.
 
-The command emits {"irm_working_hours": [...]}, or null for the list when the
-team has no business hours. Edit that document, then pass it back through
-update-working-hours.`,
+By default the command prints a weekly grid with one row per interval. Use
+-o yaml or -o json to emit the document {"irm_working_hours": [...]} (the list
+is null when the team has no business hours). Edit that document, then pass it
+back through update-working-hours.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := opts.IO.Validate(); err != nil {
@@ -41,6 +42,10 @@ update-working-hours.`,
 				return err
 			}
 
+			// The table codec renders rows; every other format renders the document.
+			if opts.IO.OutputFormat == "table" {
+				return opts.IO.Encode(cmd.OutOrStdout(), workingHoursRows(hours))
+			}
 			return opts.IO.Encode(cmd.OutOrStdout(), hours)
 		},
 	}

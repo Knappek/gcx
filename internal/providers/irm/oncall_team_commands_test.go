@@ -138,3 +138,53 @@ func TestTeamUpdateWorkingHoursRejectsInvalidBeforeCallingBackend(t *testing.T) 
 		t.Errorf("the backend must not be called for an invalid document, got a call for %q", fake.gotID)
 	}
 }
+
+func TestTeamGetWorkingHoursTable(t *testing.T) {
+	resetAgentMode(t)
+
+	week := func(monday ...any) map[string]any {
+		return map[string]any{"monday": monday, "tuesday": []any{}}
+	}
+	rng := func(start, end string) any { return map[string]any{"start": start, "end": end} }
+
+	fake := &fakeTeamAPI{hours: map[string]any{"irm_working_hours": []any{
+		map[string]any{"name": "Business hours", "irm_working_hours": week(rng("09:00:00", "12:00:00"), rng("13:00:00", "17:30:15"))},
+	}}}
+
+	// The grid is the default format.
+	out, err := runTeamsCmd(t, fake, "get-working-hours", "T1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"INTERVAL", "MON", "SUN", "Business hours", "09:00-12:00, 13:00-17:30:15"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestTeamGetWorkingHoursTableEmpty(t *testing.T) {
+	resetAgentMode(t)
+
+	fake := &fakeTeamAPI{hours: map[string]any{"irm_working_hours": nil}}
+	out, err := runTeamsCmd(t, fake, "get-working-hours", "T1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "No business hours are set for this team.") {
+		t.Errorf("expected the empty message, got:\n%s", out)
+	}
+
+	// The document formats still emit the document itself, including the null.
+	out, err = runTeamsCmd(t, fake, "get-working-hours", "T1", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	if v, ok := got["irm_working_hours"]; !ok || v != nil {
+		t.Errorf("expected an explicit null document, got %v", got)
+	}
+}
