@@ -781,6 +781,67 @@ func (c *OnCallClient) GetTeam(ctx context.Context, id string) (*Team, error) {
 	return getResource[Team](ctx, c, teamsPath, id, "team")
 }
 
+// teamWorkingHoursPath returns the sub-resource path of a team's business hours.
+func teamWorkingHoursPath(id string) string {
+	return teamsPath + url.PathEscape(id) + "/working_hours/"
+}
+
+// GetTeamWorkingHours returns the business hours of a team.
+//
+// The document is {"irm_working_hours": [...]}: a list of named intervals,
+// each with up to three time ranges per weekday, or null when the team has
+// none. It is carried as a map rather than a Go struct so that a get followed
+// by an update never drops a field this build does not know about.
+func (c *OnCallClient) GetTeamWorkingHours(ctx context.Context, id string) (map[string]any, error) {
+	resp, err := c.DoRequest(ctx, http.MethodGet, teamWorkingHoursPath(id), nil)
+	if err != nil {
+		return nil, fmt.Errorf("irm: get team working hours: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("irm: team %q not found", id)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, providers.HandleErrorResponse(resp)
+	}
+
+	var doc map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		return nil, fmt.Errorf("irm: decode team working hours: %w", err)
+	}
+	return doc, nil
+}
+
+// UpdateTeamWorkingHours replaces the business hours of a team and returns the
+// stored document. The given intervals become the team's entire set; send
+// {"irm_working_hours": null} to clear them.
+func (c *OnCallClient) UpdateTeamWorkingHours(ctx context.Context, id string, hours map[string]any) (map[string]any, error) {
+	data, err := json.Marshal(hours)
+	if err != nil {
+		return nil, fmt.Errorf("irm: marshal team working hours: %w", err)
+	}
+
+	resp, err := c.DoRequest(ctx, http.MethodPut, teamWorkingHoursPath(id), bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("irm: update team working hours: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("irm: team %q not found", id)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, providers.HandleErrorResponse(resp)
+	}
+
+	var doc map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		return nil, fmt.Errorf("irm: decode updated team working hours: %w", err)
+	}
+	return doc, nil
+}
+
 // --- User Groups ---
 
 func (c *OnCallClient) ListUserGroups(ctx context.Context) ([]UserGroup, error) {

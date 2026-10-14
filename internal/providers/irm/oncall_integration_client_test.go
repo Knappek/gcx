@@ -213,3 +213,73 @@ func TestIntegrationActionStatusCodes(t *testing.T) {
 		})
 	}
 }
+
+func TestGetTeamWorkingHours(t *testing.T) {
+	t.Parallel()
+
+	var gotMethod, gotPath string
+	client := newTestOnCallClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"irm_working_hours": []any{map[string]any{"name": "Office hours"}},
+			"a_future_field":    "kept",
+		})
+	}))
+
+	got, err := client.GetTeamWorkingHours(context.Background(), "T1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotMethod != http.MethodGet {
+		t.Errorf("got method %q, want GET", gotMethod)
+	}
+	if want := irm.BasePath + "/teams/T1/working_hours/"; gotPath != want {
+		t.Errorf("got path %q, want %q", gotPath, want)
+	}
+	if got["a_future_field"] != "kept" {
+		t.Errorf("unknown field was dropped: %v", got)
+	}
+}
+
+func TestGetTeamWorkingHoursNotFound(t *testing.T) {
+	t.Parallel()
+
+	client := newTestOnCallClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	_, err := client.GetTeamWorkingHours(context.Background(), "missing")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected a not-found error, got %v", err)
+	}
+}
+
+func TestUpdateTeamWorkingHours(t *testing.T) {
+	t.Parallel()
+
+	var gotMethod, gotPath string
+	var gotBody map[string]any
+	client := newTestOnCallClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		json.NewDecoder(r.Body).Decode(&gotBody) //nolint:errcheck
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(gotBody) //nolint:errcheck
+	}))
+
+	sent := map[string]any{"irm_working_hours": nil}
+	if _, err := client.UpdateTeamWorkingHours(context.Background(), "T1", sent); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotMethod != http.MethodPut {
+		t.Errorf("got method %q, want PUT", gotMethod)
+	}
+	if want := irm.BasePath + "/teams/T1/working_hours/"; gotPath != want {
+		t.Errorf("got path %q, want %q", gotPath, want)
+	}
+	if v, ok := gotBody["irm_working_hours"]; !ok || v != nil {
+		t.Errorf("expected an explicit null body, got %v", gotBody)
+	}
+}
