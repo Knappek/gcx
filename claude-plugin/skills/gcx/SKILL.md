@@ -90,7 +90,7 @@ gcx irm oncall teams update-working-hours <team-id> -f hours.yaml
 ```
 
 `hours.yaml` (24-hour `HH:MM:SS` times in the team's timezone; a weekday with no
-ranges is a day off):
+ranges is a day off, but every interval needs a range on at least one weekday):
 
 ```yaml
 irm_working_hours:

@@ -61,7 +61,8 @@ become the team's entire set: an interval that the file omits is deleted. Pass
 {"irm_working_hours": null} to clear every business hour of the team.
 
 Times are wall-clock times (HH:MM:SS) in the team's timezone. A weekday with no
-ranges is a day off.
+ranges is a day off, but every interval needs a time range on at least one
+weekday.
 
 Example file:
 

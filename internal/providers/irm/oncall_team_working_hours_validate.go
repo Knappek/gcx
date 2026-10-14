@@ -99,10 +99,11 @@ func validateWorkingHoursIntervals(intervals []any) []string {
 }
 
 func validateWorkingHoursWeek(where string, raw any) []string {
-	var problems []string
+	const noRanges = ": needs at least one time range on at least one weekday " +
+		"(the backend stores an interval as one row per weekday with ranges, so an interval without any is dropped)"
 
 	if raw == nil {
-		return nil // an interval without days is allowed; every day is a day off
+		return []string{where + noRanges}
 	}
 
 	week, ok := raw.(map[string]any)
@@ -110,6 +111,7 @@ func validateWorkingHoursWeek(where string, raw any) []string {
 		return []string{where + `: "irm_working_hours" must map weekday names to time ranges`}
 	}
 
+	var problems []string
 	for key := range week {
 		if !isWorkingHoursWeekday(key) {
 			problems = append(problems, fmt.Sprintf("%s: unknown weekday %q (expected one of: %s)",
@@ -117,12 +119,22 @@ func validateWorkingHoursWeek(where string, raw any) []string {
 		}
 	}
 
+	hasRange := false
 	for _, day := range workingHoursWeekdays {
 		raw, ok := week[day]
 		if !ok || raw == nil {
 			continue
 		}
+		if ranges, isList := raw.([]any); isList && len(ranges) > 0 {
+			hasRange = true
+		}
 		problems = append(problems, validateWorkingHoursDay(where+"."+day, raw)...)
+	}
+
+	// Report the missing ranges only when nothing else is wrong with the week: a typo'd weekday or
+	// a malformed day already explains why no range was found.
+	if len(problems) == 0 && !hasRange {
+		problems = append(problems, where+noRanges)
 	}
 
 	return problems
