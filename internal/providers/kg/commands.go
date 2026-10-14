@@ -1419,7 +1419,9 @@ func (o *rulesCreateOpts) setup(flags *pflag.FlagSet, successMsg string, withSki
 	if withSkipPromQLValidation {
 		flags.BoolVar(&o.SkipPromQLValidation, "skip-promql-validation", false,
 			"Skip the backend's remote PromQL validation (each expression is otherwise executed against the stack's "+
-				"metrics datasource). Use for expensive rules that time out; syntax and Asserts metadata checks still run.")
+				"metrics datasource). Use for expensive rules that time out. Syntax and Asserts metadata checks still run, "+
+				"so a rule that parses but is invalid is accepted and fails later at ruler evaluation. Backends without "+
+				"support for the parameter ignore it and validate as before.")
 	}
 	o.IO.RegisterCustomCodec("text", &RulesDryRunTextCodec{SuccessMsg: successMsg})
 	o.IO.DefaultFormat("text")

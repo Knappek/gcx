@@ -353,9 +353,32 @@ func TestPromRulesUpsert_SkipPromQLValidation(t *testing.T) {
 	}
 }
 
-func TestModelRulesUpsert_HasNoSkipPromQLValidationFlag(t *testing.T) {
-	cmd := kg.NewModelRulesCommand(writeLoaderFor(httptest.NewServer(http.NotFoundHandler())))
-	upsert, _, err := cmd.Find([]string{"upsert"})
-	require.NoError(t, err)
-	assert.Nil(t, upsert.Flags().Lookup("skip-promql-validation"))
+// model-rules never sends the prom-rules-only parameter, and rejects the flag.
+func TestModelRulesUpsert_DoesNotSendSkipPromQLValidation(t *testing.T) {
+	sawPut, gotParam := false, ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			sawPut = true
+			gotParam = r.URL.Query().Get("skipPromQLValidation")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	run := func(args ...string) error {
+		cmd := kg.NewModelRulesCommand(writeLoaderFor(server))
+		cmd.SilenceUsage = true
+		cmd.SilenceErrors = true
+		cmd.SetArgs(append([]string{"upsert", "-f", "-", "-o", "json"}, args...))
+		cmd.SetIn(bytes.NewBufferString(localModelRulesYAML))
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		return cmd.Execute()
+	}
+
+	require.NoError(t, run())
+	require.True(t, sawPut, "expected a model-rules PUT")
+	assert.Empty(t, gotParam)
+
+	require.Error(t, run("--skip-promql-validation"), "model-rules must not accept the prom-rules-only flag")
 }
