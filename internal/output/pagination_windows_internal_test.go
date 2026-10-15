@@ -19,12 +19,12 @@ const (
 	paginationArgsMarker    = "pagination-test-args"
 )
 
-// TestPaginationWindowsProcessHelper runs only in a child test executable.
+// TestMain handles helper processes before Go parses their command arguments.
 // It prints base64 so the shell's native-output encoding cannot change the
 // Unicode argument values before the parent checks them.
-func TestPaginationWindowsProcessHelper(t *testing.T) {
+func TestMain(m *testing.M) {
 	if os.Getenv(paginationArgsHelperEnv) != "1" {
-		return
+		os.Exit(m.Run())
 	}
 	for i, arg := range os.Args {
 		if arg != paginationArgsMarker {
@@ -62,7 +62,7 @@ func TestPowerShellPaginationArgumentsRoundTrip(t *testing.T) {
 			}
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
-					argv := append([]string{os.Args[0], "-test.run=^TestPaginationWindowsProcessHelper$", paginationArgsMarker}, tt.args...)
+					argv := append([]string{os.Args[0], paginationArgsMarker}, tt.args...)
 					command := shellJoinForOS(argv, "windows")
 					cmd := exec.CommandContext(t.Context(), shell, "-NoProfile", "-NonInteractive", "-Command", command)
 					cmd.Env = append(os.Environ(), paginationArgsHelperEnv+"=1")
@@ -89,7 +89,7 @@ func TestPowerShellPaginationArgumentsRoundTrip(t *testing.T) {
 
 // TestSimpleWindowsCommandRoundTrip checks the common hint in both Windows shells.
 func TestSimpleWindowsCommandRoundTrip(t *testing.T) {
-	// A relative executable path avoids quotes even if the test directory has spaces.
+	// PATH lookup avoids quotes even if the test directory has spaces.
 	dir := t.TempDir()
 	data, err := os.ReadFile(os.Args[0])
 	if err != nil {
@@ -99,7 +99,7 @@ func TestSimpleWindowsCommandRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := []string{"dashboards", "list", "--selector=a,b", "--context", "user@example.com", "--limit", "50"}
-	argv := append([]string{"./pagination-helper.exe", "-test.run=TestPaginationWindowsProcessHelper", paginationArgsMarker}, args...)
+	argv := append([]string{"pagination-helper.exe", paginationArgsMarker}, args...)
 	command := shellJoinForOS(argv, "windows")
 	if command != strings.Join(argv, " ") {
 		t.Fatalf("simple command uses shell quotes: %s", command)
@@ -116,7 +116,7 @@ func TestSimpleWindowsCommandRoundTrip(t *testing.T) {
 			}
 			cmd := exec.CommandContext(t.Context(), shell, shellArgs...)
 			cmd.Dir = dir
-			cmd.Env = append(os.Environ(), paginationArgsHelperEnv+"=1")
+			cmd.Env = append(os.Environ(), paginationArgsHelperEnv+"=1", "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("%s failed: %v; output: %s", shellName, err, output)
