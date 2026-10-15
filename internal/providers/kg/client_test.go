@@ -214,7 +214,7 @@ func TestClient_UploadPromRules(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestClient_UploadPromRules_SkipPromQLValidation(t *testing.T) {
+func TestClient_UploadPromRules_SkipPromQLEval(t *testing.T) {
 	tests := []struct {
 		name string
 		skip bool
@@ -227,7 +227,7 @@ func TestClient_UploadPromRules_SkipPromQLValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(t, http.MethodPut, r.Method)
-				assert.Equal(t, tt.want, r.URL.Query().Get("skipPromQLValidation"))
+				assert.Equal(t, tt.want, r.URL.Query().Get("skipPromQLEval"))
 				w.WriteHeader(http.StatusOK)
 			}))
 			defer server.Close()

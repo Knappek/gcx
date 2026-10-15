@@ -308,10 +308,10 @@ func TestPromRulesCreate_DryRun_NoChanges(t *testing.T) {
 	assert.False(t, writeHit, "dry-run must not write")
 }
 
-// --skip-promql-validation (prom-rules only) is forwarded to the backend as the
-// skipPromQLValidation query parameter on both the validate-sync call (dry-run)
+// --skip-promql-eval (prom-rules only) is forwarded to the backend as the
+// skipPromQLEval query parameter on both the validate-sync call (dry-run)
 // and the real PUT.
-func TestPromRulesUpsert_SkipPromQLValidation(t *testing.T) {
+func TestPromRulesUpsert_SkipPromQLEval(t *testing.T) {
 	tests := []struct {
 		name         string
 		args         []string
@@ -320,9 +320,9 @@ func TestPromRulesUpsert_SkipPromQLValidation(t *testing.T) {
 		wantParam    string
 	}{
 		{name: "dry-run without flag", args: []string{"--dry-run"}, wantMethod: http.MethodPost, wantPathTail: "prom-rules-validate-sync", wantParam: ""},
-		{name: "dry-run with flag", args: []string{"--dry-run", "--skip-promql-validation"}, wantMethod: http.MethodPost, wantPathTail: "prom-rules-validate-sync", wantParam: "true"},
+		{name: "dry-run with flag", args: []string{"--dry-run", "--skip-promql-eval"}, wantMethod: http.MethodPost, wantPathTail: "prom-rules-validate-sync", wantParam: "true"},
 		{name: "upsert without flag", args: nil, wantMethod: http.MethodPut, wantPathTail: "prom-rules", wantParam: ""},
-		{name: "upsert with flag", args: []string{"--skip-promql-validation"}, wantMethod: http.MethodPut, wantPathTail: "prom-rules", wantParam: "true"},
+		{name: "upsert with flag", args: []string{"--skip-promql-eval"}, wantMethod: http.MethodPut, wantPathTail: "prom-rules", wantParam: "true"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -330,7 +330,7 @@ func TestPromRulesUpsert_SkipPromQLValidation(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == tt.wantMethod && strings.HasSuffix(r.URL.Path, tt.wantPathTail) {
 					sawTarget = true
-					gotParam = r.URL.Query().Get("skipPromQLValidation")
+					gotParam = r.URL.Query().Get("skipPromQLEval")
 				}
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte("{}"))
@@ -354,12 +354,12 @@ func TestPromRulesUpsert_SkipPromQLValidation(t *testing.T) {
 }
 
 // model-rules never sends the prom-rules-only parameter, and rejects the flag.
-func TestModelRulesUpsert_DoesNotSendSkipPromQLValidation(t *testing.T) {
+func TestModelRulesUpsert_DoesNotSendSkipPromQLEval(t *testing.T) {
 	sawPut, gotParam := false, ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			sawPut = true
-			gotParam = r.URL.Query().Get("skipPromQLValidation")
+			gotParam = r.URL.Query().Get("skipPromQLEval")
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -380,5 +380,5 @@ func TestModelRulesUpsert_DoesNotSendSkipPromQLValidation(t *testing.T) {
 	require.True(t, sawPut, "expected a model-rules PUT")
 	assert.Empty(t, gotParam)
 
-	require.Error(t, run("--skip-promql-validation"), "model-rules must not accept the prom-rules-only flag")
+	require.Error(t, run("--skip-promql-eval"), "model-rules must not accept the prom-rules-only flag")
 }
