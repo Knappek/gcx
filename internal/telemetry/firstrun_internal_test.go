@@ -233,12 +233,9 @@ Find out more at https://grafana.com/docs/grafana/latest/as-code/observability-a
 }
 
 func TestFirstRunNoticeSkippedWhenStateDirUnwritable(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("permission checks do not apply to root")
-	}
-	readonly := filepath.Join(t.TempDir(), "readonly")
-	require.NoError(t, os.MkdirAll(readonly, 0o500))
-	path := filepath.Join(readonly, "gcx", firstRunNoticeFileName)
+	blocked := filepath.Join(t.TempDir(), "blocked")
+	require.NoError(t, os.WriteFile(blocked, []byte("file, not directory"), 0o600))
+	path := filepath.Join(blocked, "gcx", firstRunNoticeFileName)
 
 	var out strings.Builder
 	maybeShowFirstRunNotice(&out, ModeEnabled, true, false, false, path)

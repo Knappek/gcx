@@ -533,7 +533,7 @@ current-context: prod
 `
 	writeLayeredMigrationFixture(t, fixture.user, user)
 	writeLayeredMigrationFixture(t, fixture.local, local)
-	require.NoError(t, os.WriteFile(fixture.user+legacyBackupSuffix, []byte(staleBackup), 0o600))
+	writePrivateMigrationFixture(t, fixture.user+legacyBackupSuffix, []byte(staleBackup))
 
 	_, err := LoadLayered(t.Context(), "")
 	var incomplete *layeredMigrationIncompleteError

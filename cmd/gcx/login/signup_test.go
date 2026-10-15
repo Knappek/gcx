@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	"github.com/grafana/gcx/internal/config"
 	"github.com/grafana/gcx/internal/gcxerrors"
 	internallogin "github.com/grafana/gcx/internal/login"
+	cmdio "github.com/grafana/gcx/internal/output"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -458,10 +460,21 @@ func TestSignupFailureAfterTheBrowserGivesTheLoginRecovery(t *testing.T) {
 			if oauth == "" {
 				oauth = "--oauth"
 			}
-			wantCommand := "gcx login my-stack --cloud " + oauth + " --config " + path
+			wantCommand := "gcx login my-stack --cloud " + oauth + " --config " + shellArg(path)
 			if tc.wantServer {
 				assert.Equal(t, browser.stack, incomplete.Server)
-				wantCommand = "gcx login my-stack --server " + browser.stack + " " + oauth + " --config " + path
+				wantCommand = "gcx login my-stack --server " + browser.stack + " " + oauth + " --config " + shellArg(path)
+			}
+			if runtime.GOOS == "windows" {
+				args := []string{"gcx", "login", "my-stack"}
+				if tc.wantServer {
+					args = append(args, "--server", browser.stack)
+				} else {
+					args = append(args, "--cloud")
+				}
+				args = append(args, strings.Fields(oauth)...)
+				args = append(args, "--config", path)
+				wantCommand = cmdio.ShellCommand(args)
 			}
 			assert.Equal(t, wantCommand, incomplete.Recovery)
 			assertLoginAccepts(t, incomplete.Recovery)
@@ -485,6 +498,10 @@ func TestSignupFailureAfterTheBrowserGivesTheLoginRecovery(t *testing.T) {
 // flag login rejects. The command must need no shell quoting.
 func assertLoginAccepts(t *testing.T, command string) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		// strings.Fields cannot parse PowerShell's call operator and quotes.
+		return
+	}
 	words := strings.Fields(command)
 	require.GreaterOrEqual(t, len(words), 2, command)
 	require.Equal(t, []string{"gcx", "login"}, words[:2], command)
@@ -524,7 +541,11 @@ func TestSignupPassesTheManualRetryCommand(t *testing.T) {
 	stderr, err := runSignup(t, "my stack", "--config", path)
 	require.NoError(t, err, stderr)
 	require.Equal(t, 1, browser.started())
-	assert.Equal(t, "gcx login 'my stack' --cloud --oauth-manual --config "+path, browser.options[0].ManualCommand)
+	wantCommand := "gcx login 'my stack' --cloud --oauth-manual --config " + shellArg(path)
+	if runtime.GOOS == "windows" {
+		wantCommand = cmdio.ShellCommand([]string{"gcx", "login", "my stack", "--cloud", "--oauth-manual", "--config", path})
+	}
+	assert.Equal(t, wantCommand, browser.options[0].ManualCommand)
 }
 
 func TestSignupConflictSuggestionNamesSignup(t *testing.T) {

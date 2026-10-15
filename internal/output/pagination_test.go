@@ -58,3 +58,26 @@ func TestBuildListLimitCommandQuotesPowerShellSyntax(t *testing.T) {
 		t.Fatalf("BuildListLimitCommand() = %q, want %q", got, want)
 	}
 }
+
+func TestShellCommandQuotesWindowsNativeArguments(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("PowerShell command syntax applies only on Windows")
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"path with spaces", []string{"gcx", "config", "edit", "--config", `C:\Program Files\gcx\config.yaml`}, `& 'gcx' 'config' 'edit' '--config' 'C:\Program Files\gcx\config.yaml'`},
+		{"apostrophe", []string{"gcx", "login", "O'Brien"}, `& 'gcx' 'login' 'O''Brien'`},
+		{"double quote", []string{"gcx", "login", `a"b`}, `& { $PSNativeCommandArgumentPassing = 'Legacy'; & 'gcx' '"login"' '"a\"b"' }`},
+		{"empty argument", []string{"gcx", "config", "set", "key", ""}, `& { $PSNativeCommandArgumentPassing = 'Legacy'; & 'gcx' '"config"' '"set"' '"key"' '""' }`},
+		{"trailing backslash", []string{"gcx", "login", `a"b`, `C:\path\`}, `& { $PSNativeCommandArgumentPassing = 'Legacy'; & 'gcx' '"login"' '"a\"b"' '"C:\path\\"' }`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := output.ShellCommand(tc.args); got != tc.want {
+				t.Fatalf("ShellCommand() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

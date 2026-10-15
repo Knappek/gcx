@@ -3,6 +3,7 @@ package login
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/grafana/gcx/internal/config"
 	"github.com/grafana/gcx/internal/gcxerrors"
 	"github.com/grafana/gcx/internal/login"
+	cmdio "github.com/grafana/gcx/internal/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -185,6 +187,19 @@ func printSignupHeader(cmd *cobra.Command, contextName string) {
 // without, it signs in through the stack launcher, which cannot create a
 // second account.
 func signupLoginCommand(flags *loginOpts, contextName, server string, oauthArgs ...string) string {
+	if runtime.GOOS == "windows" {
+		args := []string{"gcx", "login", contextName}
+		if server != "" {
+			args = append(args, "--server", server)
+		} else {
+			args = append(args, "--cloud")
+		}
+		args = append(args, oauthArgs...)
+		if flags.Config.ConfigFile != "" {
+			args = append(args, "--config", flags.Config.ConfigFile)
+		}
+		return cmdio.ShellCommand(args)
+	}
 	parts := []string{"gcx login", shellArg(contextName)}
 	if server != "" {
 		parts = append(parts, "--server", shellArg(server))

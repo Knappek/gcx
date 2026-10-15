@@ -729,7 +729,7 @@ func TestRuntimeOnlyDestinationRecoveryHandlesDottedNamesWithoutInvalidDotPaths(
 			assert.Contains(t, detailed.Details, "literal dot-path grammar")
 			assert.Contains(t, detailed.Details, tt.context)
 			assert.Contains(t, detailed.Suggestions,
-				"Open the selected config: gcx config edit --config "+shellQuote(configPath))
+				"Open the selected config: "+editorRecoveryEditCommand(configPath))
 			for _, suggestion := range detailed.Suggestions {
 				assert.NotContains(t, suggestion, "stacks.")
 				assert.NotContains(t, suggestion, "contexts.")

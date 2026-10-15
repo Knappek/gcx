@@ -52,6 +52,11 @@ func shellJoin(argv []string) string {
 	return shellJoinForOS(argv, runtime.GOOS)
 }
 
+// ShellCommand returns a command that the current system shell can run.
+func ShellCommand(argv []string) string {
+	return shellJoin(argv)
+}
+
 func shellJoinForOS(argv []string, goos string) string {
 	if goos == "windows" {
 		if len(argv) == 0 {

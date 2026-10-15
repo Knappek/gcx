@@ -95,7 +95,7 @@ func withFakeKeychain(t *testing.T) *fakeKeychain {
 func writeTestConfig(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+	writePrivateMigrationFixture(t, path, []byte(contents))
 	return path
 }
 
@@ -108,7 +108,7 @@ func writeTrustedUserTestConfig(t *testing.T, contents string) string {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, ".config"))
 	path := filepath.Join(root, ".config", StandardConfigFolder, StandardConfigFileName)
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
-	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+	writePrivateMigrationFixture(t, path, []byte(contents))
 	return path
 }
 
@@ -581,7 +581,7 @@ current-context: attacker
 		assert.Empty(t, store.gets)
 	})
 
-	t.Run("group writable", func(t *testing.T) {
+	t.Run("untrusted writer", func(t *testing.T) {
 		store := withFakeKeychain(t)
 		store.entries["prod:grafana-token"] = "prod-secret"
 		path := writeTestConfig(t, `
@@ -592,7 +592,7 @@ contexts:
       token: keychain:gcx:prod:grafana-token
 current-context: prod
 `)
-		require.NoError(t, os.Chmod(path, 0o660))
+		makeLegacyConfigWritableByOthers(t, path)
 
 		_, err := LoadLayered(t.Context(), path)
 		require.ErrorContains(t, err, "untrusted config source")
@@ -890,9 +890,8 @@ contexts:
       server: https://devstack.grafana.net
 current-context: dev
 `
-	require.NoError(t, os.WriteFile(path, []byte(legacy), 0o600))
-	require.NoError(t, os.Chmod(dir, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	writePrivateMigrationFixture(t, path, []byte(legacy))
+	makeMigrationDirectoryReadOnly(t, dir)
 
 	var warnings bytes.Buffer
 	ctx := ContextWithWarningWriter(context.Background(), &warnings)
@@ -929,7 +928,7 @@ contexts:
       server: https://rollback.example
 current-context: rollback
 `
-	require.NoError(t, os.WriteFile(path+legacyBackupSuffix, []byte(existingBackup), 0o600))
+	writePrivateMigrationFixture(t, path+legacyBackupSuffix, []byte(existingBackup))
 
 	_, err := Load(context.Background(), ExplicitConfigFile(path))
 	require.NoError(t, err)
@@ -956,7 +955,7 @@ current-context: dev
 `
 	path := writeTestConfig(t, legacy)
 	existingBackup := "# incomplete backup\n"
-	require.NoError(t, os.WriteFile(path+legacyBackupSuffix, []byte(existingBackup), 0o600))
+	writePrivateMigrationFixture(t, path+legacyBackupSuffix, []byte(existingBackup))
 
 	var warnings bytes.Buffer
 	ctx := ContextWithWarningWriter(context.Background(), &warnings)

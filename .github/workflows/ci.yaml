@@ -94,11 +94,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Run Go tests
-        run: go test ./...
-        env:
-          GCX_AGENT_MODE: "false"
-
       - name: Build gcx.exe
         run: |
           New-Item -ItemType Directory -Path bin -Force | Out-Null
@@ -108,15 +103,17 @@ jobs:
         run: ./bin/gcx.exe --version
 
       - name: Test installer with PowerShell 7
+        if: ${{ !cancelled() }}
         shell: pwsh
         run: ./scripts/install_test.ps1
 
       - name: Test installer with Windows PowerShell 5.1
-        if: matrix.os == 'windows-latest'
+        if: ${{ !cancelled() && matrix.os == 'windows-latest' }}
         shell: powershell
         run: ./scripts/install_test.ps1
 
       - name: Install latest release and run gcx.exe
+        if: ${{ !cancelled() }}
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -126,6 +123,12 @@ jobs:
           ./scripts/install.ps1
           & (Join-Path $installDir 'gcx.exe') --version
           if ($LASTEXITCODE -ne 0) { throw "Installed gcx.exe exited with code $LASTEXITCODE" }
+
+      - name: Run Go tests
+        if: ${{ !cancelled() }}
+        run: go test ./...
+        env:
+          GCX_AGENT_MODE: "false"
 
   docs:
     name: Documentation

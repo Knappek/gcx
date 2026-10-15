@@ -59,11 +59,8 @@ func TestDeviceIDEphemeralWhenStateHomeUnknown(t *testing.T) {
 }
 
 func TestDeviceIDEphemeralWhenStateDirUnwritable(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("permission checks do not apply to root")
-	}
-	stateHome := filepath.Join(t.TempDir(), "readonly")
-	require.NoError(t, os.MkdirAll(stateHome, 0o500))
+	stateHome := filepath.Join(t.TempDir(), "blocked")
+	require.NoError(t, os.WriteFile(stateHome, []byte("file, not directory"), 0o600))
 	t.Setenv("XDG_STATE_HOME", stateHome)
 
 	id, persisted := telemetry.DeviceID()

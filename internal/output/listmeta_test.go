@@ -329,7 +329,7 @@ func TestEmitListTruncationHint(t *testing.T) {
 			argv:        []string{"gcx", "datasources", "list", "--limit", "5"},
 			agentMode:   true,
 			want:        `{"class":"hint","summary":"showing first 5 of 219","command":"gcx datasources list --limit 0"}` + "\n",
-			wantWindows: `{"class":"hint","summary":"showing first 5 of 219","command":"& 'gcx' 'datasources' 'list' '--limit' '0'"}` + "\n",
+			wantWindows: `{"class":"hint","summary":"showing first 5 of 219","command":"\u0026 'gcx' 'datasources' 'list' '--limit' '0'"}` + "\n",
 		},
 		{
 			name:      "agent mode cap variant",
