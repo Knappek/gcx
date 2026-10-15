@@ -372,20 +372,23 @@ func TestLoadLayeredConsolidatedWarningPreservesCredentialStoreBlocker(t *testin
 	store := withFakeKeychain(t)
 	store.getErr = credentials.ErrUnavailable
 	fixture := newLayeredMigrationFixture(t)
-	writeLayeredMigrationFixture(t, fixture.user, `
+	require.NoError(t, os.MkdirAll(filepath.Dir(fixture.user), 0o700))
+	writePrivateMigrationFixture(t, fixture.user, []byte(`
 contexts:
   prod:
     grafana:
       server: https://prod.example
       token: keychain:gcx:prod:grafana-token
 current-context: prod
-`)
+`))
 	writeLayeredMigrationFixture(t, fixture.local, `
 contexts:
   staging:
     grafana:
       server: https://staging.example
 `)
+
+	require.True(t, trustedDiscoveredUserLegacySource(fixture.user), "the fixture must be a trusted user source")
 
 	var warnings bytes.Buffer
 	ctx := ContextWithWarningWriter(t.Context(), &warnings)

@@ -1,8 +1,11 @@
 package config_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	configcmd "github.com/grafana/gcx/cmd/gcx/config"
@@ -242,8 +245,8 @@ contexts:
 	_, err = opts.PlanLoginMutation(cfg, "new-context", config.LoginMutationUnified)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "does not exist")
-	require.ErrorContains(t, err, userPath)
-	require.ErrorContains(t, err, localPath)
+	require.ErrorContains(t, err, testConfigPathArg(userPath))
+	require.ErrorContains(t, err, testConfigPathArg(localPath))
 }
 
 func TestPlanLoginMutationRejectsSameNamedStackOutsideContextOwner(t *testing.T) {
@@ -270,7 +273,7 @@ contexts:
 	_, err = opts.PlanLoginMutation(cfg, "prod", config.LoginMutationUnified)
 	require.ErrorContains(t, err, "Stack entry \"prod\" already exists outside the selected context owner")
 	require.ErrorContains(t, err, userPath)
-	require.ErrorContains(t, err, localPath)
+	require.ErrorContains(t, err, testConfigPathArg(localPath))
 }
 
 func TestPlanLoginMutationRejectsShadowedSameNamedStackInContextOwner(t *testing.T) {
@@ -303,7 +306,14 @@ contexts:
 	_, err = opts.PlanLoginMutation(cfg, "prod", config.LoginMutationUnified)
 	require.ErrorContains(t, err, "Stack entry \"prod\" already exists outside the selected context owner")
 	require.ErrorContains(t, err, userPath)
-	require.ErrorContains(t, err, localPath)
+	require.ErrorContains(t, err, testConfigPathArg(localPath))
+}
+
+func testConfigPathArg(path string) string {
+	if runtime.GOOS == "windows" {
+		return "--config '" + strings.ReplaceAll(filepath.ToSlash(path), "'", "''") + "'"
+	}
+	return fmt.Sprintf("--config %q", path)
 }
 
 func TestPlanLoginMutationKeepsZeroOneAndExplicitSelectionBehavior(t *testing.T) {

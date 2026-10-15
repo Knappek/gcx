@@ -68,11 +68,12 @@ func shellJoinForOS(argv []string, goos string) string {
 		}
 		// PowerShell needs the call operator for a quoted executable path.
 		// Windows PowerShell 5.1 loses empty arguments and literal double quotes
-		// when it passes ordinary strings to a native command. Use its legacy
+		// when it passes ordinary strings to a native command. A trailing backslash
+		// can also escape its closing quote. Use its legacy
 		// command-line format for those values. PowerShell 7 can use the same
 		// format when its native argument mode is set to Legacy in this scope.
 		for _, arg := range argv[1:] {
-			if arg == "" || strings.ContainsRune(arg, '"') {
+			if arg == "" || strings.ContainsRune(arg, '"') || strings.HasSuffix(arg, `\`) {
 				for i := 1; i < len(parts); i++ {
 					parts[i] = powerShellQuote(windowsCommandLineQuote(argv[i]))
 				}

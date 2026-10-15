@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/grafana/gcx/internal/config"
@@ -111,5 +112,9 @@ func TestVerifyLoginMutationBindingsQuotesExactConfigPath(t *testing.T) {
 		&config.Context{Cloud: "grafana-ops"},
 		config.LoginMutationCloud,
 	)
-	require.ErrorContains(t, err, `--config "/tmp/config owner/with spaces.yaml"`)
+	want := `--config "/tmp/config owner/with spaces.yaml"`
+	if runtime.GOOS == "windows" {
+		want = `--config '/tmp/config owner/with spaces.yaml'`
+	}
+	require.ErrorContains(t, err, want)
 }

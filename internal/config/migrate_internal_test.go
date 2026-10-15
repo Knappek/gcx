@@ -633,14 +633,16 @@ func TestMigrateDiscoveredUserLegacySentinelThroughSymlinkedHome(t *testing.T) {
 
 	path := filepath.Join(realHome, ".config", StandardConfigFolder, StandardConfigFileName)
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
-	require.NoError(t, os.WriteFile(path, []byte(`
+	writePrivateMigrationFixture(t, path, []byte(`
 contexts:
   prod:
     grafana:
       server: https://prod.example
       token: keychain:gcx:prod:grafana-token
 current-context: prod
-`), 0o600))
+`))
+
+	require.True(t, trustedDiscoveredUserLegacySource(path), "the fixture must be a trusted user source")
 
 	cfg, err := LoadLayered(t.Context(), "")
 	require.NoError(t, err)

@@ -36,3 +36,11 @@ func TestShellJoinForOSPreservesLegacyNativeArguments(t *testing.T) {
 		t.Fatalf("shellJoinForOS() = %q, want %q", got, want)
 	}
 }
+
+func TestShellJoinForOSTrailingBackslash(t *testing.T) {
+	args := []string{"gcx", `C:\folder name\`, "tail"}
+	want := `& { $PSNativeCommandArgumentPassing = 'Legacy'; & 'gcx' '"C:\folder name\\"' '"tail"' }`
+	if got := shellJoinForOS(args, "windows"); got != want {
+		t.Fatalf("shellJoinForOS() = %q, want %q", got, want)
+	}
+}

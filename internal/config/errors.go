@@ -3,6 +3,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 
 	"github.com/grafana/gcx/internal/credentials"
 )
@@ -62,11 +66,25 @@ func (e CredentialRejectedError) Error() string {
 		return message + "; unlock the keychain in this session, then retry"
 	}
 	if e.Source != "" {
-		message += fmt.Sprintf("; review the file and re-authenticate with --config %q", e.Source)
+		message += "; review the file and re-authenticate with --config " + quoteConfigPath(e.Source)
 	} else {
 		message += "; re-authenticate with an explicitly selected --config file"
 	}
 	return message
+}
+
+// quoteConfigPath formats a config path for a command in the current shell.
+func quoteConfigPath(path string) string {
+	return quoteConfigPathForOS(path, runtime.GOOS)
+}
+
+func quoteConfigPathForOS(path, goos string) string {
+	if goos == "windows" {
+		// Forward slashes keep the path valid if it ends in a separator.
+		path = strings.ReplaceAll(filepath.ToSlash(path), `\`, "/")
+		return "'" + strings.ReplaceAll(path, "'", "''") + "'"
+	}
+	return strconv.Quote(path)
 }
 
 func (e CredentialRejectedError) Unwrap() error {

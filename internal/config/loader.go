@@ -49,7 +49,7 @@ var keychainStoreFn = defaultKeychainStore
 // atomic replacement fails.
 //
 //nolint:gochecknoglobals // narrow filesystem failure-injection seam.
-var renameConfigFile = os.Rename
+var renameConfigFile = renameConfigFileWithRetry
 
 // syncConfigDirectory is a test seam for the post-rename durability barrier.
 // Old keychain generations are deleted only after it succeeds.

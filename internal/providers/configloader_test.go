@@ -3,10 +3,12 @@ package providers_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -492,7 +494,13 @@ current-context: repository
 	var rejected internalconfig.CredentialRejectedError
 	require.ErrorAs(t, err, &rejected)
 	assert.Contains(t, err.Error(), "before network use")
-	assert.Contains(t, err.Error(), localFile)
+	canonicalFile, canonicalErr := filepath.EvalSymlinks(localFile)
+	require.NoError(t, canonicalErr)
+	wantConfigArg := fmt.Sprintf("--config %q", canonicalFile)
+	if runtime.GOOS == "windows" {
+		wantConfigArg = "--config '" + strings.ReplaceAll(filepath.ToSlash(canonicalFile), "'", "''") + "'"
+	}
+	assert.Contains(t, err.Error(), wantConfigArg)
 }
 
 func TestLoadDirectProviderSnapshot_EndpointEnvironmentRequiresMatchingCredential(t *testing.T) {
