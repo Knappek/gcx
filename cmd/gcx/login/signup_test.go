@@ -311,8 +311,9 @@ func TestSignupAcceptsAnEmptyExistingContext(t *testing.T) {
 
 func TestSignupRefusesAnAutoDiscoveredRepositoryConfig(t *testing.T) {
 	signupEnvironment(t, "true")
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 	t.Setenv("GCX_CONFIG", "")
@@ -460,22 +461,16 @@ func TestSignupFailureAfterTheBrowserGivesTheLoginRecovery(t *testing.T) {
 			if oauth == "" {
 				oauth = "--oauth"
 			}
-			wantCommand := "gcx login my-stack --cloud " + oauth + " --config " + shellArg(path)
+			args := []string{"gcx", "login", "my-stack"}
 			if tc.wantServer {
 				assert.Equal(t, browser.stack, incomplete.Server)
-				wantCommand = "gcx login my-stack --server " + browser.stack + " " + oauth + " --config " + shellArg(path)
+				args = append(args, "--server", browser.stack)
+			} else {
+				args = append(args, "--cloud")
 			}
-			if runtime.GOOS == "windows" {
-				args := []string{"gcx", "login", "my-stack"}
-				if tc.wantServer {
-					args = append(args, "--server", browser.stack)
-				} else {
-					args = append(args, "--cloud")
-				}
-				args = append(args, strings.Fields(oauth)...)
-				args = append(args, "--config", path)
-				wantCommand = cmdio.ShellCommand(args)
-			}
+			args = append(args, strings.Fields(oauth)...)
+			args = append(args, "--config", path)
+			wantCommand := cmdio.ShellCommand(args)
 			assert.Equal(t, wantCommand, incomplete.Recovery)
 			assertLoginAccepts(t, incomplete.Recovery)
 
@@ -541,10 +536,7 @@ func TestSignupPassesTheManualRetryCommand(t *testing.T) {
 	stderr, err := runSignup(t, "my stack", "--config", path)
 	require.NoError(t, err, stderr)
 	require.Equal(t, 1, browser.started())
-	wantCommand := "gcx login 'my stack' --cloud --oauth-manual --config " + shellArg(path)
-	if runtime.GOOS == "windows" {
-		wantCommand = cmdio.ShellCommand([]string{"gcx", "login", "my stack", "--cloud", "--oauth-manual", "--config", path})
-	}
+	wantCommand := cmdio.ShellCommand([]string{"gcx", "login", "my stack", "--cloud", "--oauth-manual", "--config", path})
 	assert.Equal(t, wantCommand, browser.options[0].ManualCommand)
 }
 

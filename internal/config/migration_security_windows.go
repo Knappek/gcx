@@ -83,10 +83,10 @@ func checkLegacySecurityDescriptor(sd *windows.SECURITY_DESCRIPTOR, user *window
 		case windows.ACCESS_DENIED_ACE_TYPE:
 			continue
 		case windows.ACCESS_ALLOWED_ACE_TYPE:
-			if ace.Header.AceSize < uint16(unsafe.Sizeof(*ace)) {
+			if ace.Header.AceSize < uint16(unsafe.Sizeof(*ace)) { // nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block -- Sizeof is a constant; it does not dereference ace.
 				return errors.New("file ACE is too short")
 			}
-			sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+			sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart)) // nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block -- GetAce returns the documented inline SID from an OS descriptor retained by KeepAlive below.
 			if !sid.IsValid() {
 				return errors.New("file ACE has an invalid SID")
 			}
@@ -118,7 +118,7 @@ func createPrivateLegacyBackup(path string) (*os.File, error) {
 		return nil, err
 	}
 	attrs := windows.SecurityAttributes{
-		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
+		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})), // nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block -- Constant native struct size for CreateFile; no memory access.
 		SecurityDescriptor: sd,
 	}
 	handle, err := windows.CreateFile(name, windows.GENERIC_WRITE|windows.READ_CONTROL,

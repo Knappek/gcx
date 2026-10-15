@@ -1370,8 +1370,9 @@ func newLoginTLSServer(t *testing.T) (*httptest.Server, string) {
 
 func TestLoginRejectsFreshCredentialForLayeredLocalOwnerBeforeNetwork(t *testing.T) {
 	t.Setenv("GCX_AGENT_MODE", "false")
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	userDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", userDir)
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
@@ -1428,9 +1429,10 @@ current-context: default
 
 func TestLoginRejectsDifferentGrafanaAndCloudOwnersBeforeNetwork(t *testing.T) {
 	t.Setenv("GCX_AGENT_MODE", "false")
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	userDir := t.TempDir()
-	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", userDir)
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 	t.Setenv("GCX_CONFIG", "")
@@ -1502,9 +1504,10 @@ contexts:
 
 func TestLoginRejectsSameNamedStackOutsideContextOwnerBeforeNetwork(t *testing.T) {
 	t.Setenv("GCX_AGENT_MODE", "false")
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	userDir := t.TempDir()
-	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", userDir)
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 	t.Setenv("GCX_CONFIG", "")
@@ -1567,9 +1570,10 @@ contexts:
 func TestLoginCopyOnWritesCloudEntrySharedByAnotherLayer(t *testing.T) {
 	t.Setenv("GCX_AGENT_MODE", "false")
 	t.Setenv("GCX_KEYCHAIN", "off")
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	userDir := t.TempDir()
-	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", userDir)
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 	t.Setenv("GCX_CONFIG", "")
@@ -1774,9 +1778,10 @@ func TestAutoLocalCredentialPolicyAllowsOnlyBoundKeep(t *testing.T) {
 func isolateAutoLocalLoginEnv(t *testing.T) string {
 	t.Helper()
 	t.Setenv("GCX_AGENT_MODE", "false")
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 	t.Setenv("GCX_CONFIG", "")
 	t.Setenv("GRAFANA_TOKEN", "")

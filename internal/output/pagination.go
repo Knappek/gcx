@@ -52,16 +52,25 @@ func shellJoin(argv []string) string {
 	return shellJoinForOS(argv, runtime.GOOS)
 }
 
-// ShellCommand returns a command that the current system shell can run.
+// ShellCommand formats a command for a POSIX shell on Unix. On Windows, simple
+// commands also work in cmd.exe. Commands that need quoting use PowerShell
+// syntax. The caller must use PowerShell to run those Windows commands.
 func ShellCommand(argv []string) string {
 	return shellJoin(argv)
 }
 
 func shellJoinForOS(argv []string, goos string) string {
-	if goos == "windows" {
-		if len(argv) == 0 {
-			return ""
+	allSafe := true
+	for _, arg := range argv {
+		if arg == "" || !isShellSafe(arg) || (goos == "windows" && (strings.ContainsRune(arg, '%') || strings.HasPrefix(arg, "@"))) {
+			allSafe = false
+			break
 		}
+	}
+	if allSafe {
+		return strings.Join(argv, " ")
+	}
+	if goos == "windows" {
 		parts := make([]string, len(argv))
 		for i, arg := range argv {
 			parts[i] = powerShellQuote(arg)

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"testing"
 
 	"github.com/grafana/gcx/cmd/gcx/datasources"
@@ -242,9 +241,6 @@ func TestListExplicitLimitTrimsDatasources(t *testing.T) {
 	require.NotNil(t, result.ListMeta.Total)
 	assert.Equal(t, 60, *result.ListMeta.Total)
 	wantCommand := "gcx datasources list --limit 0"
-	if runtime.GOOS == "windows" {
-		wantCommand = "& 'gcx' 'datasources' 'list' '--limit' '0'"
-	}
 	assert.Equal(t, wantCommand, result.ListMeta.Continue)
 
 	// ...and human-legible on stderr, in the maintainer-approved sentence

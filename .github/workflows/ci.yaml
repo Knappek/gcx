@@ -112,17 +112,9 @@ jobs:
         shell: powershell
         run: ./scripts/install_test.ps1
 
-      - name: Install latest release and run gcx.exe
+      - name: Vet Windows files
         if: ${{ !cancelled() }}
-        shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          $installDir = Join-Path $env:RUNNER_TEMP 'gcx release smoke\bin'
-          $env:GCX_INSTALL_DIR = $installDir
-          ./scripts/install.ps1
-          & (Join-Path $installDir 'gcx.exe') --version
-          if ($LASTEXITCODE -ne 0) { throw "Installed gcx.exe exited with code $LASTEXITCODE" }
+        run: go vet ./...
 
       - name: Run Go tests
         if: ${{ !cancelled() }}

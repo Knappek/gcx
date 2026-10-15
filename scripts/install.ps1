@@ -37,12 +37,57 @@ function Get-GcxLatestVersion {
     return [string]$release.tag_name
 }
 
-function Get-GcxUserPath {
-    return [Environment]::GetEnvironmentVariable('Path', 'User')
+function Get-GcxUserPath([string]$subKey = 'Environment') {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($subKey)
+    if (-not $key) { return '' }
+    try {
+        # Keep references such as %USERPROFILE% in the stored PATH.
+        return $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    } finally {
+        $key.Dispose()
+    }
 }
 
-function Set-GcxUserPath([string]$value) {
-    [Environment]::SetEnvironmentVariable('Path', $value, 'User')
+function Set-GcxUserPath([string]$value, [string]$subKey = 'Environment') {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($subKey)
+    try {
+        $key.SetValue('Path', $value, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+    } finally {
+        $key.Dispose()
+    }
+}
+
+function Send-GcxEnvironmentChange {
+    $notified = $false
+    try {
+        if (-not ('Gcx.WindowsEnvironment' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace Gcx {
+    public static class WindowsEnvironment {
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr SendMessageTimeout(
+            IntPtr window, uint message, UIntPtr wParam, string lParam,
+            uint flags, uint timeout, out UIntPtr result);
+
+        public static bool Notify() {
+            UIntPtr result;
+            // Notify all top-level windows. Stop waiting for a window after one second.
+            return SendMessageTimeout(new IntPtr(0xffff), 0x001a, UIntPtr.Zero,
+                "Environment", 0x0002, 1000, out result) != IntPtr.Zero;
+        }
+    }
+}
+'@ -ErrorAction Stop
+        }
+        $notified = [Gcx.WindowsEnvironment]::Notify()
+    } catch {
+        # A notification failure must not undo the completed PATH update.
+    }
+    if (-not $notified) {
+        Write-Warning 'The user PATH changed, but Windows did not confirm the environment update. Sign out and sign in again if new terminals cannot find gcx.' -WarningAction Continue
+    }
 }
 
 function Test-GcxPathEntry([string]$pathValue, [string]$directory) {
@@ -62,6 +107,7 @@ function Add-GcxToPath([string]$directory) {
     if (-not (Test-GcxPathEntry $userPath $directory)) {
         $newPath = if ($userPath) { "$($userPath.TrimEnd(';'));$directory" } else { $directory }
         Set-GcxUserPath $newPath
+        Send-GcxEnvironmentChange
     }
     if (-not (Test-GcxPathEntry $env:Path $directory)) {
         $env:Path = if ($env:Path) { "$($env:Path.TrimEnd(';'));$directory" } else { $directory }

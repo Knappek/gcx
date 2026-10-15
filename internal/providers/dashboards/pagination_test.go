@@ -2,7 +2,6 @@ package dashboards_test
 
 import (
 	"bytes"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -66,9 +65,6 @@ func TestEmitListPaginationHint(t *testing.T) {
 
 	out := buf.String()
 	commandParts := []string{"gcx --context dev dashboards list", "--api-version=dashboard.grafana.app/v2", "--limit 50", "--continue token-abc"}
-	if runtime.GOOS == "windows" {
-		commandParts = []string{"& 'gcx' '--context' 'dev' 'dashboards' 'list'", "'--api-version=dashboard.grafana.app/v2'", "'--limit' '50'", "'--continue' 'token-abc'"}
-	}
 	for _, want := range append([]string{
 		"hint: showing 2 dashboards; more pages are available",
 	}, commandParts...) {

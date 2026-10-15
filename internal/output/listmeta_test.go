@@ -213,7 +213,6 @@ func TestAttachListMeta(t *testing.T) {
 		meta         *cmdio.ListMeta
 		argv         []string
 		wantContinue string
-		wantWindows  string
 	}{
 		{
 			name: "nil meta stays nil",
@@ -225,21 +224,18 @@ func TestAttachListMeta(t *testing.T) {
 			meta:         &cmdio.ListMeta{Truncated: true, Returned: 5, Total: new(219)},
 			argv:         argv,
 			wantContinue: "gcx datasources list --type prometheus --limit 0",
-			wantWindows:  "& 'gcx' 'datasources' 'list' '--type' 'prometheus' '--limit' '0'",
 		},
 		{
 			name:         "unknown total derives doubled limit preserving filters",
 			meta:         &cmdio.ListMeta{Truncated: true, Returned: 5},
 			argv:         argv,
 			wantContinue: "gcx datasources list --type prometheus --limit 10",
-			wantWindows:  "& 'gcx' 'datasources' 'list' '--type' 'prometheus' '--limit' '10'",
 		},
 		{
 			name:         "limit=value spelling is stripped too",
 			meta:         &cmdio.ListMeta{Truncated: true, Returned: 3, Total: new(9)},
 			argv:         []string{"gcx", "alert", "rules", "list", "--limit=3", "--folder", "abc"},
 			wantContinue: "gcx alert rules list --folder abc --limit 0",
-			wantWindows:  "& 'gcx' 'alert' 'rules' 'list' '--folder' 'abc' '--limit' '0'",
 		},
 		{
 			name:         "cap-bounded page has no runnable continuation",
@@ -264,9 +260,6 @@ func TestAttachListMeta(t *testing.T) {
 			}
 			require.NotNil(t, got)
 			want := tc.wantContinue
-			if runtime.GOOS == "windows" && tc.wantWindows != "" {
-				want = tc.wantWindows
-			}
 			assert.Equal(t, want, got.Continue)
 		})
 	}
@@ -277,12 +270,11 @@ func TestEmitListTruncationHint(t *testing.T) {
 	// populates from the invocation argv (covered by TestAttachListMeta);
 	// argv column here shows the invocation each fixture corresponds to.
 	tests := []struct {
-		name        string
-		meta        *cmdio.ListMeta
-		argv        []string
-		agentMode   bool
-		want        string
-		wantWindows string
+		name      string
+		meta      *cmdio.ListMeta
+		argv      []string
+		agentMode bool
+		want      string
 	}{
 		{
 			name: "nil meta emits nothing",
@@ -293,27 +285,24 @@ func TestEmitListTruncationHint(t *testing.T) {
 		{
 			// Maintainer-approved TTY shape (PR988 review): a sentence, not a
 			// "<summary>: <command>" splice.
-			name:        "total known TTY",
-			meta:        &cmdio.ListMeta{Truncated: true, Returned: 5, Total: new(219)},
-			argv:        []string{"gcx", "datasources", "list", "--limit", "5"},
-			want:        "hint: showing first 5 of 219. See all results with: gcx datasources list --limit 0\n",
-			wantWindows: "hint: showing first 5 of 219. See all results with: & 'gcx' 'datasources' 'list' '--limit' '0'\n",
+			name: "total known TTY",
+			meta: &cmdio.ListMeta{Truncated: true, Returned: 5, Total: new(219)},
+			argv: []string{"gcx", "datasources", "list", "--limit", "5"},
+			want: "hint: showing first 5 of 219. See all results with: gcx datasources list --limit 0\n",
 		},
 		{
-			name:        "total known TTY preserves filter flags in continuation",
-			meta:        &cmdio.ListMeta{Truncated: true, Returned: 1, Total: new(219)},
-			argv:        []string{"gcx", "datasources", "list", "--type", "prometheus", "--limit", "1"},
-			want:        "hint: showing first 1 of 219. See all results with: gcx datasources list --type prometheus --limit 0\n",
-			wantWindows: "hint: showing first 1 of 219. See all results with: & 'gcx' 'datasources' 'list' '--type' 'prometheus' '--limit' '0'\n",
+			name: "total known TTY preserves filter flags in continuation",
+			meta: &cmdio.ListMeta{Truncated: true, Returned: 1, Total: new(219)},
+			argv: []string{"gcx", "datasources", "list", "--type", "prometheus", "--limit", "1"},
+			want: "hint: showing first 1 of 219. See all results with: gcx datasources list --type prometheus --limit 0\n",
 		},
 		{
 			// Unknown total: never promise --limit 0 retrieves everything —
 			// suggest a doubled limit instead.
-			name:        "total unknown TTY suggests doubled limit",
-			meta:        &cmdio.ListMeta{Truncated: true, Returned: 50},
-			argv:        []string{"gcx", "irm", "oncall", "alert-groups", "list", "--limit", "50"},
-			want:        "hint: showing first 50; more results are available. See more with: gcx irm oncall alert-groups list --limit 100\n",
-			wantWindows: "hint: showing first 50; more results are available. See more with: & 'gcx' 'irm' 'oncall' 'alert-groups' 'list' '--limit' '100'\n",
+			name: "total unknown TTY suggests doubled limit",
+			meta: &cmdio.ListMeta{Truncated: true, Returned: 50},
+			argv: []string{"gcx", "irm", "oncall", "alert-groups", "list", "--limit", "50"},
+			want: "hint: showing first 50; more results are available. See more with: gcx irm oncall alert-groups list --limit 100\n",
 		},
 		{
 			// Cap variant: no --limit suggestion at all — a bigger limit
@@ -324,12 +313,11 @@ func TestEmitListTruncationHint(t *testing.T) {
 			want: "hint: showing first 1000 (safety cap). Refine filters to narrow the result set\n",
 		},
 		{
-			name:        "agent mode emits JSONL hint with bare summary",
-			meta:        &cmdio.ListMeta{Truncated: true, Returned: 5, Total: new(219)},
-			argv:        []string{"gcx", "datasources", "list", "--limit", "5"},
-			agentMode:   true,
-			want:        `{"class":"hint","summary":"showing first 5 of 219","command":"gcx datasources list --limit 0"}` + "\n",
-			wantWindows: `{"class":"hint","summary":"showing first 5 of 219","command":"\u0026 'gcx' 'datasources' 'list' '--limit' '0'"}` + "\n",
+			name:      "agent mode emits JSONL hint with bare summary",
+			meta:      &cmdio.ListMeta{Truncated: true, Returned: 5, Total: new(219)},
+			argv:      []string{"gcx", "datasources", "list", "--limit", "5"},
+			agentMode: true,
+			want:      `{"class":"hint","summary":"showing first 5 of 219","command":"gcx datasources list --limit 0"}` + "\n",
 		},
 		{
 			name:      "agent mode cap variant",
@@ -353,9 +341,6 @@ func TestEmitListTruncationHint(t *testing.T) {
 			var buf bytes.Buffer
 			cmdio.EmitListTruncationHint(&buf, cmdio.AttachListMeta(tc.meta, tc.argv))
 			want := tc.want
-			if runtime.GOOS == "windows" && tc.wantWindows != "" {
-				want = tc.wantWindows
-			}
 			assert.Equal(t, want, buf.String())
 		})
 	}
@@ -424,25 +409,22 @@ func TestBuildListLimitCommand(t *testing.T) {
 		wantWindows string
 	}{
 		{
-			name:        "strips separate --limit value",
-			argv:        []string{"gcx", "datasources", "list", "--limit", "5", "--type", "prometheus"},
-			limit:       0,
-			want:        "gcx datasources list --type prometheus --limit 0",
-			wantWindows: "& 'gcx' 'datasources' 'list' '--type' 'prometheus' '--limit' '0'",
+			name:  "strips separate --limit value",
+			argv:  []string{"gcx", "datasources", "list", "--limit", "5", "--type", "prometheus"},
+			limit: 0,
+			want:  "gcx datasources list --type prometheus --limit 0",
 		},
 		{
-			name:        "strips --limit=value spelling",
-			argv:        []string{"gcx", "datasources", "list", "--limit=5"},
-			limit:       10,
-			want:        "gcx datasources list --limit 10",
-			wantWindows: "& 'gcx' 'datasources' 'list' '--limit' '10'",
+			name:  "strips --limit=value spelling",
+			argv:  []string{"gcx", "datasources", "list", "--limit=5"},
+			limit: 10,
+			want:  "gcx datasources list --limit 10",
 		},
 		{
-			name:        "appends when no prior limit",
-			argv:        []string{"gcx", "alert", "rules", "list"},
-			limit:       0,
-			want:        "gcx alert rules list --limit 0",
-			wantWindows: "& 'gcx' 'alert' 'rules' 'list' '--limit' '0'",
+			name:  "appends when no prior limit",
+			argv:  []string{"gcx", "alert", "rules", "list"},
+			limit: 0,
+			want:  "gcx alert rules list --limit 0",
 		},
 		{
 			name:        "quotes unsafe args",
@@ -456,7 +438,7 @@ func TestBuildListLimitCommand(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			want := tc.want
-			if runtime.GOOS == "windows" {
+			if runtime.GOOS == "windows" && tc.wantWindows != "" {
 				want = tc.wantWindows
 			}
 			assert.Equal(t, want, cmdio.BuildListLimitCommand(tc.argv, tc.limit))

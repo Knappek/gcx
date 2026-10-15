@@ -27,6 +27,10 @@ from the latest release. It verifies the SHA-256 checksum before installation.
 It installs `gcx.exe` in `$env:LOCALAPPDATA\gcx\bin` by default. It adds that
 directory to your user `PATH` and to the current PowerShell process.
 
+You can run `gcx` from PowerShell or Command Prompt (`cmd.exe`). Simple command
+hints work in both shells. Hints with quoted arguments use PowerShell syntax.
+Use PowerShell to run those hints.
+
 To upgrade, run the same command again. To install a specific version or use
 another directory, set the environment variables before you run the command:
 
@@ -46,14 +50,20 @@ To uninstall the default installation, remove the file and its `PATH` entry:
 ```powershell
 $installDir = Join-Path $env:LOCALAPPDATA 'gcx\bin'
 Remove-Item (Join-Path $installDir 'gcx.exe')
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-$newPath = ($userPath -split ';' | Where-Object { $_ -and $_ -ne $installDir }) -join ';'
-[Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+try {
+    $userPath = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $newPath = ($userPath -split ';' | Where-Object { $_ -and $_ -ne $installDir }) -join ';'
+    $key.SetValue('Path', $newPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+} finally {
+    $key.Dispose()
+}
 $env:Path = ($env:Path -split ';' | Where-Object { $_ -and $_ -ne $installDir }) -join ';'
 ```
 
 If you set `GCX_INSTALL_DIR`, use that directory in the uninstall commands.
-The commands leave other files in the directory in place.
+The commands leave other files in the directory in place. Sign out of Windows
+and sign in again to refresh `PATH` in new applications.
 
 ### Install a Windows ZIP file manually
 

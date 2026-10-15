@@ -44,3 +44,35 @@ func TestShellJoinForOSTrailingBackslash(t *testing.T) {
 		t.Fatalf("shellJoinForOS() = %q, want %q", got, want)
 	}
 }
+
+func TestShellJoinForOSSimpleCommands(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "no arguments", want: ""},
+		{name: "pagination", args: []string{"gcx", "dashboards", "list", "--limit", "50", "--continue", "next-token"}, want: "gcx dashboards list --limit 50 --continue next-token"},
+		{name: "selector and email", args: []string{"gcx", "datasources", "list", "--selector=a,b", "--context", "user@example.com"}, want: "gcx datasources list --selector=a,b --context user@example.com"},
+	}
+	for _, goos := range []string{"windows", "linux", "darwin"} {
+		for _, tt := range tests {
+			t.Run(goos+"/"+tt.name, func(t *testing.T) {
+				if got := shellJoinForOS(tt.args, goos); got != tt.want {
+					t.Fatalf("shellJoinForOS() = %q, want %q", got, tt.want)
+				}
+			})
+		}
+	}
+}
+
+func TestShellJoinForOSQuotesWindowsExpansion(t *testing.T) {
+	for _, arg := range []string{"%USERPROFILE%", "@context"} {
+		t.Run(arg, func(t *testing.T) {
+			want := "& 'gcx' 'login' '" + arg + "'"
+			if got := shellJoinForOS([]string{"gcx", "login", arg}, "windows"); got != want {
+				t.Fatalf("shellJoinForOS() = %q, want %q", got, want)
+			}
+		})
+	}
+}

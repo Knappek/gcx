@@ -49,7 +49,7 @@ func TestDeviceIDRewritesCorruptFile(t *testing.T) {
 func TestDeviceIDEphemeralWhenStateHomeUnknown(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "")
 	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Setenv("USERPROFILE", "")
 	assert.Empty(t, telemetry.DeviceIDPath(), "unknown state home must not yield a relative path")
 
 	id, persisted := telemetry.DeviceID()
@@ -59,12 +59,33 @@ func TestDeviceIDEphemeralWhenStateHomeUnknown(t *testing.T) {
 }
 
 func TestDeviceIDEphemeralWhenStateDirUnwritable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file permissions do not apply to Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("permission checks do not apply to root")
+	}
+	stateHome := t.TempDir()
+	require.NoError(t, os.Chmod(stateHome, 0o500))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(stateHome, 0o700)) })
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	id, persisted := telemetry.DeviceID()
+	assert.False(t, persisted, "unwritable state directory must yield an ephemeral ID")
+	_, err := uuid.Parse(id)
+	require.NoError(t, err)
+
+	other, _ := telemetry.DeviceID()
+	assert.NotEqual(t, id, other, "ephemeral IDs must not repeat across invocations")
+}
+
+func TestDeviceIDEphemeralWhenStateHomeIsFile(t *testing.T) {
 	stateHome := filepath.Join(t.TempDir(), "blocked")
 	require.NoError(t, os.WriteFile(stateHome, []byte("file, not directory"), 0o600))
 	t.Setenv("XDG_STATE_HOME", stateHome)
 
 	id, persisted := telemetry.DeviceID()
-	assert.False(t, persisted, "unwritable state dir must yield an ephemeral ID")
+	assert.False(t, persisted, "state home file must yield an ephemeral ID")
 	_, err := uuid.Parse(id)
 	require.NoError(t, err)
 

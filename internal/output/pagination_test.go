@@ -14,9 +14,6 @@ func TestBuildPaginationCommandPreservesArgvAndReplacesPaginationFlags(t *testin
 		"next-token",
 	)
 	want := "gcx --context dev dashboards list --api-version=dashboard.grafana.app/v2 --limit 100 --continue next-token"
-	if runtime.GOOS == "windows" {
-		want = "& 'gcx' '--context' 'dev' 'dashboards' 'list' '--api-version=dashboard.grafana.app/v2' '--limit' '100' '--continue' 'next-token'"
-	}
 	if got != want {
 		t.Fatalf("BuildPaginationCommand() = %q, want %q", got, want)
 	}
@@ -49,10 +46,10 @@ func TestBuildPaginationCommandQuotesApostrophe(t *testing.T) {
 }
 
 func TestBuildListLimitCommandQuotesPowerShellSyntax(t *testing.T) {
-	got := output.BuildListLimitCommand([]string{"C:\\Program Files\\gcx.exe", "dashboards", "list", "--selector=a,b", "--context", "team's prod"}, 25)
 	if runtime.GOOS != "windows" {
-		return
+		t.Skip("PowerShell command syntax applies only on Windows")
 	}
+	got := output.BuildListLimitCommand([]string{"C:\\Program Files\\gcx.exe", "dashboards", "list", "--selector=a,b", "--context", "team's prod"}, 25)
 	want := "& 'C:\\Program Files\\gcx.exe' 'dashboards' 'list' '--selector=a,b' '--context' 'team''s prod' '--limit' '25'"
 	if got != want {
 		t.Fatalf("BuildListLimitCommand() = %q, want %q", got, want)

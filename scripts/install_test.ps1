@@ -45,11 +45,17 @@ function Assert-GcxThrows([scriptblock]$action, [string]$message) {
     Assert-Gcx $threw $message
 }
 
+# Keep the real helpers for the isolated registry test.
+$script:readUserPath = ${function:Get-GcxUserPath}
+$script:writeUserPath = ${function:Set-GcxUserPath}
+
 function Get-GcxUserPath { return $script:userPath }
 function Set-GcxUserPath([string]$value) {
     if ($script:failPathUpdate) { throw 'Test PATH update failure.' }
     $script:userPath = $value
 }
+# Installer cases must not notify other applications on the test machine.
+function Send-GcxEnvironmentChange {}
 function Get-GcxLatestVersion { return 'v1.2.3' }
 function Save-GcxFile([string]$uri, [string]$path) {
     if ($script:failDownload) { throw 'Test download failure.' }
@@ -95,6 +101,33 @@ function Invoke-GcxCase([string]$name, [scriptblock]$body) {
             [Environment]::SetEnvironmentVariable($key, $script:originalEnv[$key], 'Process')
         }
     }
+}
+
+Invoke-GcxCase 'preserve raw PATH references and the expandable registry type' {
+    $subKey = 'Software\gcx-install-test-' + [Guid]::NewGuid().ToString('N')
+    $key = $null
+    try {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($subKey)
+        $rawPath = '%USERPROFILE%\AppData\Local\Microsoft\WindowsApps;%TEMP%\Tools'
+        $key.SetValue('Path', $rawPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+        $readPath = & $script:readUserPath $subKey
+        Assert-Gcx ($readPath -ceq $rawPath) 'The registry read expanded a PATH reference.'
+        $newPath = "$readPath;$($script:installDir)"
+        & $script:writeUserPath $newPath $subKey
+        $storedPath = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        Assert-Gcx ($storedPath -ceq $newPath) 'The registry write changed a raw PATH reference.'
+        Assert-Gcx ($key.GetValueKind('Path') -eq [Microsoft.Win32.RegistryValueKind]::ExpandString) 'The PATH registry type is not REG_EXPAND_SZ.'
+    } finally {
+        if ($key) { $key.Dispose() }
+        [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($subKey, $false)
+    }
+}
+
+Invoke-GcxCase 'keep raw PATH references when adding the install directory' {
+    $script:userPath = '%USERPROFILE%\AppData\Local\Microsoft\WindowsApps;%TEMP%\Tools'
+    $rawPath = $script:userPath
+    Add-GcxToPath $script:installDir
+    Assert-Gcx ($script:userPath -ceq "$rawPath;$($script:installDir)") 'The PATH update changed an existing reference.'
 }
 
 Invoke-GcxCase 'install in a path with spaces and run the executable' {
