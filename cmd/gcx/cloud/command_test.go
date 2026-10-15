@@ -5,7 +5,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/grafana/gcx/internal/auth"
@@ -142,8 +144,13 @@ func TestCloudLoginRejectsAmbiguousLayeredWrite(t *testing.T) {
 	cmd.SetArgs([]string{"--cloud-token", "must-not-be-written"})
 	err := cmd.ExecuteContext(t.Context())
 	require.ErrorContains(t, err, "write target is ambiguous")
-	require.ErrorContains(t, err, "--config "+strconv.Quote(userPath))
-	require.ErrorContains(t, err, "--config "+strconv.Quote(localPath))
+	for _, path := range []string{userPath, localPath} {
+		quoted := strconv.Quote(path)
+		if runtime.GOOS == "windows" {
+			quoted = "'" + strings.ReplaceAll(filepath.ToSlash(path), "'", "''") + "'"
+		}
+		require.ErrorContains(t, err, "--config "+quoted)
+	}
 
 	userRaw, readErr := os.ReadFile(userPath)
 	require.NoError(t, readErr)
