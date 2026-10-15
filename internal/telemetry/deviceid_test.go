@@ -3,6 +3,7 @@ package telemetry_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/google/uuid"
@@ -25,7 +26,9 @@ func TestDeviceIDCreatesAndReuses(t *testing.T) {
 
 	info, err := os.Stat(telemetry.DeviceIDPath())
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
 }
 
 func TestDeviceIDRewritesCorruptFile(t *testing.T) {
@@ -46,6 +49,7 @@ func TestDeviceIDRewritesCorruptFile(t *testing.T) {
 func TestDeviceIDEphemeralWhenStateHomeUnknown(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "")
 	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	assert.Empty(t, telemetry.DeviceIDPath(), "unknown state home must not yield a relative path")
 
 	id, persisted := telemetry.DeviceID()

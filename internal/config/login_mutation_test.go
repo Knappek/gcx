@@ -33,6 +33,7 @@ func TestLoginMutationGuardRejectsNewlyDiscoveredLayer(t *testing.T) {
 	userDir := filepath.Join(home, ".config")
 	workDir := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", userDir)
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 	t.Setenv("GCX_CONFIG", "")

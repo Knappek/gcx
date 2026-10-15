@@ -25,6 +25,7 @@ func TestBasicLogin(t *testing.T) {
 	t.Setenv("GRAFANA_TOKEN", "environment-token-must-not-win")
 	t.Setenv("GRAFANA_USER", "environment-user")
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("GCX_CONFIG", "")
 	const password = " password-with-spaces "
 	var probes atomic.Int32

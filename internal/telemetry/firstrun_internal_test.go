@@ -176,6 +176,7 @@ func TestFirstRunNoticeSuppressedWhenModeNotEnabled(t *testing.T) {
 func TestFirstRunNoticeSkippedWhenStateHomeUnknown(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "")
 	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	assert.Empty(t, FirstRunNoticePath(), "unknown state home must not yield a relative path")
 
 	var out strings.Builder

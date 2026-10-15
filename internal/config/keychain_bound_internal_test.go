@@ -1759,6 +1759,7 @@ func TestLocalSourceClassificationSurvivesFileRemovalBeforeEnvironmentOverride(t
 	home := t.TempDir()
 	work := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 	t.Setenv(ConfigFileEnvVar, "")

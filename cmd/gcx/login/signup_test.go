@@ -310,6 +310,7 @@ func TestSignupAcceptsAnEmptyExistingContext(t *testing.T) {
 func TestSignupRefusesAnAutoDiscoveredRepositoryConfig(t *testing.T) {
 	signupEnvironment(t, "true")
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 	t.Setenv("GCX_CONFIG", "")

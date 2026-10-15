@@ -1,6 +1,7 @@
 package notifier //nolint:testpackage // Path tests rely on overriding xdg state via env vars.
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ func TestStatePath_UsesXDGStateHomeWhenSet(t *testing.T) {
 func TestStatePath_RoundTripsStateViaLoadAndSave(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "state"))
 
 	now := time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC)

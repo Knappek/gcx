@@ -529,6 +529,7 @@ func isolateCloudConfigEnv(t *testing.T) (string, string) {
 	userDir := t.TempDir()
 	workDir := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", userDir)
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 	t.Setenv("GCX_CONFIG", "")

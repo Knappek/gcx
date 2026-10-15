@@ -36,6 +36,7 @@ func TestConfigLoader_BindFlags_OnlyBindsConfig(t *testing.T) {
 
 func TestConfigLoader_ConfigFilePrecedence(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 
@@ -174,6 +175,7 @@ func isolateConfigSources(t *testing.T) (string, string, string) {
 	xdgDir := t.TempDir()
 	workDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", xdgDir)
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 	t.Setenv(internalconfig.ConfigFileEnvVar, "")
@@ -686,6 +688,7 @@ func TestConfigLoader_SaveDatasourceUID_SkipsWhenNoConfigExists(t *testing.T) {
 	t.Chdir(workDir)
 
 	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", xdgDir)
 
 	loader := &providers.ConfigLoader{}
@@ -717,6 +720,7 @@ func TestConfigLoader_SaveDatasourceUID_ErrorsWithMultipleConfigSources(t *testi
 	t.Chdir(workDir)
 
 	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", xdgDir)
 
 	loader := &providers.ConfigLoader{}
@@ -1144,6 +1148,7 @@ func TestLoadGrafanaConfig_PersistsRefreshToLocalOAuthLayer(t *testing.T) {
 	workDir := t.TempDir()
 
 	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", xdgDir)
 
 	t.Chdir(workDir)
@@ -1243,6 +1248,7 @@ func TestLoadGrafanaConfig_PersistsRefreshToStackOwningLayer(t *testing.T) {
 	workDir := t.TempDir()
 
 	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", xdgDir)
 
 	t.Chdir(workDir)

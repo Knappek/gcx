@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -106,6 +107,7 @@ func runStream(t *testing.T, em *streamEmitter, client *assistant.Client) error 
 	t.Helper()
 	// Redirect the last-context-id state file away from the real home.
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	streamOpts := assistant.StreamOptions{Timeout: 30, OnEvent: em.onEvent()}
 	result := client.ChatWithApproval(t.Context(), "hello", streamOpts, em.approvalHandler(nil))
 	return em.finish(result, 30)
@@ -447,6 +449,7 @@ func TestFinishTerminalWriteFailureSurfaces(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			setAgentMode(t, tt.agentMode)
 			t.Setenv("HOME", t.TempDir()) // keep SaveLastContextID away from the real home
+			t.Setenv("USERPROFILE", os.Getenv("HOME"))
 			em := newStreamEmitter(&failingWriter{err: writeErr}, &bytes.Buffer{}, &tt.opts)
 
 			err := em.finish(tt.result, 30)

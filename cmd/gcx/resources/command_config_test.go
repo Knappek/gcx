@@ -68,6 +68,7 @@ func (a *configRoutingTestAdapter) Example() json.RawMessage { return nil }
 // S1, and provider write-back must mutate S1 only.
 func TestResourcesCommand_ConfigFileRoutesLazyAdapterDeleteAndWriteback(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 

@@ -29,6 +29,7 @@ func newLayeredMigrationFixture(t *testing.T) layeredMigrationFixture {
 	require.NoError(t, os.MkdirAll(home, 0o700))
 	require.NoError(t, os.MkdirAll(work, 0o700))
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("XDG_CONFIG_DIRS", systemRoot)
 	t.Setenv(ConfigFileEnvVar, "")

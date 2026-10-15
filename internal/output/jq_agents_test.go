@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -232,7 +233,9 @@ func TestOptions_JQ_AgentsStream(t *testing.T) {
 			assert.Equal(t, tt.want, string(payload), "no array wrapping, number rounding, or receipt in the file")
 			info, err := os.Stat(path)
 			require.NoError(t, err)
-			assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
+			if runtime.GOOS != "windows" {
+				assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
+			}
 			var hint map[string]any
 			require.NoError(t, json.Unmarshal(stderr.Bytes(), &hint), "one typed spill hint")
 			assert.Equal(t, "hint", hint["class"])
