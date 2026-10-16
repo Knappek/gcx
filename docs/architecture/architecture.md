@@ -298,9 +298,10 @@ Two loading modes:
 Keychain references are source-bound: the canonical config path, exact
 owner/field, and normalized destination must match before a secret is resolved.
 Write-back loads only its raw target file, so environment overrides and values
-from other layers are never flattened into that file. A missing native keychain
-may permit a warned plaintext fallback for a brand-new credential, while a
-reachable but locked or interaction-disabled keychain fails closed.
+from other layers are never flattened into that file. An unavailable native
+keychain fails closed, same as a reachable but locked or interaction-disabled
+keychain; the only plaintext fallback path is the explicit `GCX_KEYCHAIN=off`
+opt-out.
 
 ### Namespace Semantics
 
@@ -464,16 +465,16 @@ on PATH and `mise run` invokes them with the correct versions.
 | `mise run build` | Compile to `bin/gcx` with version injection |
 | `mise run tests` | Run all unit tests |
 | `mise run lint` | golangci-lint with project config |
-| `mise run docs` | Generate reference docs + build mkdocs site |
-| `mise run reference-drift` | Fail if generated docs are stale |
+| `mise run docs` | Build Grafana website documentation with Docker |
+| `mise run docs:refresh` | Generate CLI and configuration references from the latest stable release |
 | `mise run test-env-up` | Start Grafana 12 + MySQL 9 via docker-compose |
 
 ### CI/CD
 
-Three GitHub Actions workflows:
-- **ci.yaml**: PR/push gate -- lint, tests, doc drift check (parallel jobs)
+Relevant GitHub Actions workflows:
+- **ci.yaml**: PR/push gate -- lint, tests, Grafana documentation build (parallel jobs)
 - **release.yaml**: Tag-triggered -- goreleaser cross-platform builds + GitHub Release
-- **publish-docs.yaml**: Manual GitHub Pages deployment
+- **deploy-pr-preview.yml**: Grafana website preview for same-repository docs PRs
 
 ### Code Generation
 
@@ -528,8 +529,11 @@ and checked for drift in CI.
    concurrency edge cases are undertested.
 
 3. **Resource versioning in updates.** `pusher.go` copies `resourceVersion` from
-   the existing object before Update, but there is no conflict detection or retry
-   logic. Concurrent updates to the same resource could produce unexpected results.
+   the existing object before Update. The dynamic-client mutation wrapper retries
+   Kubernetes Conflict responses only for TimeInterval/TemplateGroup, inside the
+   dry-run guard; other kinds return the original conflict immediately. It does not refresh a stale resource version, so concurrent updates to
+   the same object can still exhaust retries and report the final conflict.
+   Provider adapters retain their own concurrency behavior.
 
 ### Medium Priority
 
@@ -654,7 +658,7 @@ Files most important for understanding the codebase. Organized by architectural 
 
 | File | Purpose |
 |------|---------|
-| `internal/agent/agent.go` | `IsAgentMode()`, `SetFlag()` — env-var detection at init time |
+| `internal/agent/agent.go` | `IsAgentMode()`, `SetFlag()`, `Name()` — native signals and supported explicit identities |
 | `internal/terminal/terminal.go` | `Detect()`, `IsPiped()`, `NoTruncate()` — TTY/pipe state for output suppression |
 
 ### Client Layer
@@ -810,6 +814,7 @@ Provider command tree backed by fleet-management `Set/Get` + observed-state RPCs
 | `internal/providers/irm/provider.go` | `IRMProvider` implementing the `providers.Provider` interface (registers `gcx irm` with `oncall` and `incidents` subcommands) |
 | `internal/providers/irm/oncall_client.go` | OnCall REST client |
 | `internal/providers/irm/oncall_commands.go` | OnCall CLI commands (schedules, integrations, escalation chains) |
+| `internal/providers/irm/oncall_integration_commands.go` | Integration sub-resource verbs (get-templates, update-templates, start-maintenance, stop-maintenance) |
 | `internal/providers/irm/oncall_adapter.go` | Resource adapter for OnCall resources |
 | `internal/providers/irm/incidents_client.go` | Incidents REST client |
 | `internal/providers/irm/incidents_commands.go` | IRM Incidents CLI commands (list, get, create, close, open, list-activity, list-contexts, activity add, severities, update) |
@@ -826,6 +831,8 @@ Provider command tree backed by fleet-management `Set/Get` + observed-state RPCs
 
 ### Knowledge Graph (Asserts) Provider
 
+The shared transport in `internal/query/kg` serves both the KG provider and App Observability enrichment. For a single service whose scope is unknown, App Observability falls back from the exact entity lookup to a server-side exact-name search. This avoids missing a known service outside the first page of the full service inventory. Bulk enrichment still uses a bounded first page and reports truncation.
+
 | File | Purpose |
 |------|---------|
 | `internal/providers/kg/provider.go` | `KGProvider` implementing the `providers.Provider` interface |
@@ -835,7 +842,10 @@ Provider command tree backed by fleet-management `Set/Get` + observed-state RPCs
 
 ### Assistant Provider
 
-`Commands()` is a verbatim lift-and-shift of the previously hand-mounted `gcx assistant` tree (`prompt`, `dashboard`, `conversation`, `investigations`, `mcp-servers`); `TypedRegistrations()` registers exactly one adapter, `TypedCRUD[MCPServer]`, so MCP-server configuration flows through `gcx resources get/pull/push/delete` for both `user` and `tenant` scope. See ADR-021.
+`Commands()` preserves the previously hand-mounted `gcx assistant` tree (`prompt`, `dashboard`, `conversation`, `investigations`, `mcp-servers`) and adds experimental `watchers` configuration and status commands; `TypedRegistrations()` registers `TypedCRUD[MCPServer]` and `TypedCRUD[Watcher]`, so MCP-server configuration flows through `gcx resources get/pull/push/delete` for both `user` and `tenant` scope. See ADR-021.
+
+
+Watcher configuration uses the typed resource pipeline for get/pull/push/delete, while status reports runtime observations separately. Its client lives in `internal/assistant/watchers/`, schema, identity and reconciliation policy in `internal/assistant/watcher/`, and commands in `internal/providers/assistant/watchers/`. The Watcher adapter owns complete batch collision checks, partial-read diagnostics and configuration reconciliation. Generic resource packages invoke optional provider-neutral contracts before identity-keyed insertion or mutation, preserving full envelopes and selecting deletion identities without configuration exports. See [ADR-026](../adrs/provider-owned-resource-hooks/026-provider-owned-resource-hooks.md).
 
 | File | Purpose |
 |------|---------|
@@ -856,7 +866,6 @@ Provider command tree backed by fleet-management `Set/Get` + observed-state RPCs
 | `internal/linter/bundle/` | Embedded Rego bundle with built-in linting rules |
 | `internal/linter/builtins/` | Built-in rule validators (PromQL, LogQL) |
 | `cmd/gcx/linter/command.go` | `dev lint` subgroup (run, new, rules, test subcommands; formerly top-level `linter`) |
-| `scripts/linter-rules-reference/` | Code generator for linter rule reference documentation |
 
 ### Dev Command
 

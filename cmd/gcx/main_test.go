@@ -12,11 +12,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/grafana/gcx/cmd/gcx/fail"
 	"github.com/grafana/gcx/cmd/gcx/root"
 	"github.com/grafana/gcx/internal/agent"
 	"github.com/grafana/gcx/internal/gcxerrors"
+	"github.com/grafana/gcx/internal/resources/dynamic"
+	"github.com/grafana/gcx/internal/telemetry"
 )
 
 // TestReportError_EmittedError pins the atomic-stdout-ownership contract:
@@ -71,6 +76,13 @@ func TestIsSilentCancellation(t *testing.T) {
 		{name: "nil error", err: nil, want: false},
 		{name: "bare context.Canceled", err: context.Canceled, want: true},
 		{name: "wrapped context.Canceled", err: fmt.Errorf("query: %w", context.Canceled), want: true},
+		{
+			name: "canceled dynamic-client request",
+			err: dynamic.ParseStatusError(&url.Error{
+				Op: "Get", URL: "http://example.invalid", Err: context.Canceled,
+			}),
+			want: true,
+		},
 		{name: "deadline exceeded is not a cancellation", err: context.DeadlineExceeded, want: false},
 		{name: "unrelated error", err: errors.New("boom"), want: false},
 		{
@@ -201,9 +213,8 @@ const (
 	configSetFallbackProcessHelper = "GCX_CONFIG_SET_FALLBACK_PROCESS_HELPER"
 )
 
-func TestConfigSetPlaintextFallbackWarningProcess(t *testing.T) {
-	const token = "synthetic-plaintext-fallback-token"
-	const warning = "Warning: credential store could not securely store the credential; credentials remain in plaintext on disk; verify your OS credential store (Keychain, Credential Manager, or Secret Service) is available and working to enable encrypted credential storage"
+func TestConfigSetUnavailableKeychainFailsClosedProcess(t *testing.T) {
+	const token = "synthetic-unavailable-keychain-token"
 
 	for _, agentMode := range []string{"false", "true"} {
 		t.Run("agent-mode="+agentMode, func(t *testing.T) {
@@ -251,24 +262,27 @@ current-context: smoke
 				"GRAFANA_STACK_ID=",
 			)
 
-			if err := cmd.Run(); err != nil {
-				t.Fatalf("config set failed: %v; stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+			if err := cmd.Run(); err == nil {
+				t.Fatalf("config set unexpectedly succeeded; stdout=%q stderr=%q", stdout.String(), stderr.String())
 			}
-			// The agent output contract makes config set emit one JSON
-			// mutation document; the human default stays silent.
+			// The typed error envelope must be emitted in agent mode; the human
+			// diagnostic belongs on stderr without corrupting stdout.
 			if agentMode == "true" {
 				var doc map[string]any
 				if err := json.Unmarshal(stdout.Bytes(), &doc); err != nil {
-					t.Fatalf("agent stdout is not one JSON document: %v; stdout=%q", err, stdout.String())
+					t.Fatalf("agent stdout is not one JSON error document: %v; stdout=%q", err, stdout.String())
 				}
-				if doc["type"] != "gcx.config.mutation" {
-					t.Fatalf("agent stdout document type = %v, want gcx.config.mutation", doc["type"])
+				if doc["type"] != "gcx.error" {
+					t.Fatalf("agent stdout document type = %v, want gcx.error", doc["type"])
+				}
+				if stderr.Len() != 0 {
+					t.Fatalf("agent error wrote unexpected stderr: %q", stderr.String())
 				}
 			} else if stdout.Len() != 0 {
 				t.Fatalf("config set wrote unexpected stdout: %q", stdout.String())
 			}
-			if got := bytes.Count(stderr.Bytes(), []byte(warning)); got != 1 {
-				t.Fatalf("plaintext fallback warning count = %d, want 1; stderr=%q", got, stderr.String())
+			if agentMode == "false" && !bytes.Contains(stderr.Bytes(), []byte("Keychain unavailable")) {
+				t.Fatalf("human output did not name the unavailable keychain: %q", stderr.String())
 			}
 			if bytes.Contains(stdout.Bytes(), []byte(token)) || bytes.Contains(stderr.Bytes(), []byte(token)) {
 				t.Fatalf("plaintext token appeared in command output; stdout=%q stderr=%q", stdout.String(), stderr.String())
@@ -278,8 +292,8 @@ current-context: smoke
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !bytes.Contains(raw, []byte(token)) || bytes.Contains(raw, []byte("keychain:gcx:v2:")) {
-				t.Fatalf("expected deliberate plaintext fallback without a sentinel: %q", raw)
+			if bytes.Contains(raw, []byte(token)) || bytes.Contains(raw, []byte("keychain:gcx:v2:")) {
+				t.Fatalf("unavailable keychain wrote a credential unexpectedly: %q", raw)
 			}
 			info, err := os.Stat(configPath)
 			if err != nil {
@@ -504,5 +518,59 @@ func TestParsePseudoVersion(t *testing.T) {
 				t.Errorf("date = %q, want %q", gotDate, tt.wantDate)
 			}
 		})
+	}
+}
+
+// TestBuildUsageEvent_APIRequestDetail pins the wiring between the api
+// command's recorded shape and the emitted event: without it, deleting the
+// CurrentAPIRequest block in buildUsageEvent keeps the suite green.
+func TestBuildUsageEvent_APIRequestDetail(t *testing.T) {
+	// buildUsageEvent calls DeviceID(), which persists an ID under the state
+	// home on first use: keep the test away from the real one.
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	telemetry.RecordAPIRequest("POST", "/api/ds/query",
+		[]byte(`{"queries":[{"datasource":{"type":"prometheus","uid":"abc"}}]}`))
+
+	event := buildUsageEvent(&root.TelemetryInfo{Command: "api"}, time.Now(), 0)
+
+	if event.APIMethod != "POST" {
+		t.Errorf("APIMethod = %q, want %q", event.APIMethod, "POST")
+	}
+	if event.APIRoute != "/api/ds/query" {
+		t.Errorf("APIRoute = %q, want %q", event.APIRoute, "/api/ds/query")
+	}
+	if event.APIDatasourceTypes != "prometheus" {
+		t.Errorf("APIDatasourceTypes = %q, want %q", event.APIDatasourceTypes, "prometheus")
+	}
+}
+
+type mutationCancellationError struct {
+	cause error
+	saved bool
+}
+
+func (e mutationCancellationError) Error() string          { return "resource id=example: " + e.cause.Error() }
+func (e mutationCancellationError) Unwrap() error          { return e.cause }
+func (e mutationCancellationError) MutationWasSaved() bool { return e.saved }
+
+func TestSavedMutationCancellationKeepsReceipt(t *testing.T) {
+	for _, cause := range []error{context.Canceled, errors.New("interrupt signal received")} {
+		for _, saved := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/saved=%t", cause, saved), func(t *testing.T) {
+				ctx, cancel := context.WithCancelCause(t.Context())
+				cancel(cause)
+				err := fmt.Errorf("edit resource: %w", mutationCancellationError{cause: cause, saved: saved})
+				if got := isSilentCancellation(ctx, err); got != !saved {
+					t.Fatalf("silent cancellation = %t, saved=%t", got, saved)
+				}
+				if saved {
+					detail := fail.ErrorToDetailedError(err)
+					if detail == nil || detail.ExitCode == nil || *detail.ExitCode != gcxerrors.ExitPartialFailure || !strings.Contains(detail.Details, "id=example") {
+						t.Fatalf("saved mutation lost its receipt or partial-failure status: %+v", detail)
+					}
+				}
+			})
+		}
 	}
 }

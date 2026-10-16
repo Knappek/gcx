@@ -1,24 +1,241 @@
 ## Unreleased
 
+- Classify CLI failures with consistent category summaries and preserve operation context, server messages, codes, and trace IDs without repeated diagnostics. HTTP 401/403 errors carried by shared provider transports, Assistant helpers, and `gcx api`, missing Cloud credentials, and missing SM credentials/stack prerequisites now exit 3 instead of 1; the instrumentation mutual-exclusion error converter now assigns exit 2 instead of 1 (the current setup command does not emit its sentinel). HTML error pages are replaced with generic API-response details while retaining auth classification; `gcx api` continues to show the full body. Fleet 404s mean `Resource not found` only for Connect `code: "not_found"`; other 404s mean `Endpoint not available`.
+
+## v1.6.0 (2026-10-13)
+
+### Breaking changes
+
+- Faro app writes now reject `spec.settings.geolocationLevel: region`.
+  Change it to `subdivision` in saved manifests before you upgrade.
+  This affects `gcx frontend apps` writes and resource pushes. Before this
+  release, gcx ignored Faro app settings on writes, so `region` never took
+  effect. Faro settings now reach the API. (#1444)
+- `gcx datasources loki labels` and `gcx logs labels` now reject stray
+  positional arguments. They also reject an explicit empty `--query` or
+  `--label`. Omit these flags for an unscoped label list. Give each flag
+  a nonempty value when you use it. (#1325)
+
+### New commands and improvements
+
+- Add `gcx signup` to create a Grafana Cloud account and save its first
+  connection. Complete account setup in the browser. If the connection
+  fails after signup, finish it with `gcx login`. (#1383)
+- Let `gcx login --cloud --oauth` open the stack chooser when no server
+  is set. Browser cancellation now exits with code 5. On macOS, the
+  terminal watcher uses its own device, so SSH paste works. (#1383)
+- Add `gcx docs` commands to search and read Grafana product docs.
+  (#1234)
+- Add `gcx alert routing-trees` commands to manage native alert routing
+  trees. (#1472)
+- Add experimental `gcx profiles query-anomalies` and
+  `gcx datasources pyroscope query-anomalies` commands. Their flags and
+  output may change. (#1435)
+- Add `--query` to scope Loki label and value lists. (#1325)
+- Add `--dry-run` to Synthetic Monitoring check create and update.
+  (#1429)
+- Add an experimental Go sandbox module that runs gcx as WebAssembly.
+  Reduce its build size and startup time. (#1440)
+- Keep resource manager identity stable across gcx upgrades. Resolve
+  resource selectors with dotted API groups. (#1537, #1441)
+- Correct Faro app settings writes. Preserve labels and mobile
+  classification on create. Report truncated lists and accept app names
+  in get. (#1444, #1390, #1445)
+- Read service map metadata correctly. Fix the SLO server interval
+  example. Scope k6 load tests to the selected project. (#1457, #1452,
+  #1450)
+- Name missing permissions in Faro proxy errors. Show native alert rule
+  selectors in help. Recover after concurrent config writes. (#1518,
+  #1458, #1485)
+- Detect Codex, Gemini, and other agent hosts. Let
+  `GCX_AGENT_SPILL_BYTES=0` disable output spilling. (#1461, #1439)
+- Update docs, security reporting guidance, and on-call command
+  discovery. (#1520, #1206, #1305)
+
+## v1.5.0 (2026-10-05)
+
+## Breaking changes: Cloud stack creation
+
+- `gcx cloud stacks create` now requires `--org <org-slug>`, including
+  dry runs. The Cloud API validates access to the selected organisation.
+- Successful creation defaults to YAML and returns only `name`, `orgSlug`,
+  `slug`, `status`, and `url` in every output format. Use 
+  `gcx cloud stacks get <slug> -o json` for full details. Dry runs still
+  return a request preview.
+- Creation trims whitespace around `--org` and `--name`; stack slugs retain
+  strict lowercase-alphanumeric validation. Blank values are rejected.
+
+Update scripts before upgrading:
+
+```sh
+# Add the explicit destination organisation to existing create commands.
+gcx cloud stacks create --org example-org --name demo --slug demo --region us --dry-run
+
+# After creation, retrieve fields omitted from the concise result.
+gcx cloud stacks get demo -o json
+```
+
+## Cloud organisation discovery and creation
+
+- Add `gcx cloud orgs list` to show organisation slugs and membership roles
+  for the signed-in user.
+  - Fresh Cloud OAuth logins request `profile`. Rerun `gcx cloud login` if
+  your saved login lacks that scope. 
+- Allow two minutes for stack creation. If it times out, check
+  `gcx cloud stacks get <slug>` with the same config/context before retrying:
+  the stack may already exist or still be provisioning.
+- Reject blank organisation values in `cloud stacks list`; that command
+  already required `--org` before this release.
+
+## Other improvements
+
+- Preserve Synthetic Monitoring `spec.folderUid` in check manifests,
+  responses, and resource workflows. Omit it to retain the assignment;
+  supply an empty string to clear it.
+- Explain how `--since` or `--from`/`--to` can speed up trace-ID lookup.
+  Use the correct time range; one that excludes the trace returns not found.
+- Show an Interactive Learning link after text-mode login when the
+  Pathfinder plugin is installed and enabled. JSON/YAML output is unchanged.
+- Add a contributor RFC for unified alerting resource workflows; it does
+  not introduce a new runtime alerting API.
+
+## v1.4.0 (2026-10-02)
+
+**Metrics and traces**
+- Add `gcx metrics search metric-names/label-names/label-values` and
+  `gcx datasources prometheus search-metric-names/search-label-names/search-label-values`,
+  backed by the experimental Prometheus/Mimir search API (#1374)
+- Add experimental TraceByID options to `gcx traces get` and
+  `gcx datasources tempo get`: `--filter` keeps the spans that match a TraceQL
+  spanset expression, shaped by `--keep-hierarchy`, `--match-depth` and
+  `--ancestor-depth`; `--prune` (with `--prune-group-by`, `--prune-min-spans`,
+  `--prune-max-parent-depth`) collapses repeated sibling spans. Both are off
+  unless set, and aim at shrinking large traces before `--llm` analysis (#1250)
+
+**Authentication and configuration**
+- Add Basic authentication to `gcx login` (#1389)
+- List the available contexts when the requested context is not found (#1210)
+
+**Agent Observability**
+- Add `gcx agento11y model-rates` to set your own negotiated model prices (#1377)
+
+**Synthetic Monitoring and IRM**
+- Add `gcx synthetic-monitoring queries list/get` for named queries (#1373)
+- Manage IRM OnCall integration alert templates and maintenance mode (#1188)
+
+**Application Observability**
+- Add `gcx appo11y operations list/get` (#1334)
+- Show service metadata, Explore links and Knowledge Graph data for services
+  (#1330, #1333)
+- Resolve scoped Knowledge Graph services by their exact name (#1384)
+
+**Security and debugging**
+- `--insecure-log-http-payload` dumps now run at the innermost transport layer
+  and show every header that reaches the wire, including the OAuth bearer
+  token. They also show the OAuth token refresh exchange, which carries the
+  refresh token and the rotated token pair. Treat captured debug logs as
+  secrets (#1190)
+- Label the dumps `http request dump` and `http response dump`, include
+  `Content-Length` and `Accept-Encoding` in request dumps, report why a dump
+  failed, and document that dumps log at Debug level (`-vvv`) (#1190)
+
+**Docs and internals**
+- Add guides for managing resources and diagnosing missing telemetry
+  (#1413, #1368)
+- Clarify the MkDocs setup and fix broken links (#1378, #1417)
+- Move Knowledge Graph transport into a shared internal client (#1331, #1332)
+
+## v1.3.1 (2026-09-22)
+
+**Synthetic Monitoring**
+- Add ad hoc check execution with result polling (#1311)
+- Add named backend datasource queries (#1307)
+- Add optional script decoding for browser and scripted checks (#1309)
+
+**Datasources and queries**
+- Add StarTree Pinot datasource queries (#1255)
+- Add Frontend Observability session retrieval (#1257)
+- Preserve datasource plugin types in list and resource responses (#1356)
+
+**Dashboards, Assistant, and Agent Observability**
+- Add a render timeout option to dashboard snapshots (#1355)
+- Add optional artifact downloads to experiment pulls (#1321)
+- Read legacy, AI SDK, and shared Assistant transcripts (#1369)
+
+**Application Observability**
+- Require App Observability activation for service commands (#1329)
+
+**SLO, Fleet, and skills**
+- Move SLO definitions and reports to declarative adapters (#1342)
+- Use `gcx resources push` and `pull` for new SLO workflows. Generic push
+  matches natural keys. Deprecated SLO wrappers match UUIDs only (#1342)
+- Show Fleet collector health attributes and timestamps (#1352)
+- Reconcile installed skills with a release lifecycle catalog (#1339)
+
+**Security and telemetry**
+- Stop OAuth before network use when the credential store is not writable (#1313)
+- Add the human or agent execution mode to the user agent (#1336)
+
+**Other**
+- Migrate Knowledge Graph, Alerting, and Agent Observability tables to shared
+  codecs (#1345, #1346, #1347)
+- Update Go and Kubernetes dependencies (#915, #798)
+- Improve release, review, and ownership workflows (#1341, #1306, #1350,
+  #1317, #1314)
+
+## v1.3.0 (2026-09-13)
+
 **Breaking changes**
+- Credential storage now fails closed when the OS keychain is unavailable, instead of writing to the config file in plaintext with a warning. You will now see a `Keychain unavailable` error in this scenario. A locked, as opposed to absent, keychain already failed closed and is unchanged. Set `GCX_KEYCHAIN=off` to opt in to a plaintext write. (#1271)
+- Fleet Management permissions have changed: A grafana.com Cloud Access Policy token is no longer needed for interacting with `gcx fleet`. gcx will need `write` permissions when using the OAuth flow for all `gcx fleet` commands. Users will need `grafana-collector-app:read` for named routes, and wildcard routes need the Admin role or `grafana-collector-app:admin`, including some read-only commands such as `tenant get-limits`. (#1261)
+- `gcx synthetic-monitoring probes deploy` emits different manifests, and the probe token is now provided through a Kubernetes Secret, defined by the `SM_AGENT_API_TOKEN` environment variable. To use this, regenerate the manifests and update anything that read the token out of the Deployment arguments before applying. Using `--token` still works but it is deprecated and hidden from help (#1262)
+- `gcx synthetic-monitoring probes reset-token` now returns the new token value instead of just confirming the reset. The value is in `gcx.synth.probe_token_reset`. Anything parsing the previous result shape needs updating (#1262)
+- `gcx irm oncall schedules list-final-shifts` takes a `--timezone` flag and sends the timezone of the schedule, rather than the host. Without the `--timezone` flag it now uses the schedule's timezone, falling back to UTC with a warning if the schedule does not have a timezone set. (#1187)
 
-- Fleet Management and Instrumentation now use the `grafana-collector-app` plugin proxy instead of direct Cloud Access Policy authentication. A Cloud Access Policy token with `fleet-management` scopes is no longer sufficient. Use a Grafana stack login and ensure that the plugin is enabled. Older stack tokens can require a new `gcx login` to obtain `grafana-api:write`. Named plugin routes need `grafana-collector-app:read`. Wildcard routes need `grafana-collector-app:admin`, including some read-only commands. The default `gcx cloud login --scope` list no longer includes `fleet-management:read` or `fleet-management:write`.
-- Fleet collector resource manifests now include `spec.id`. Collector creation requires this field. Existing numeric-ID manifests continue to work for update and delete. Add `spec.id` before you reuse an older manifest to create a collector.
-- `gcx setup status` now adds `fleet-management` as the first item in `products`. Select entries by `.product` instead of their array position. The command returns exit code 1 when the plugin is missing or disabled. It returns exit code 4 when the Instrumentation check fails. In both cases, it emits the status document before it exits.
-- `gcx synthetic-monitoring probes reset-token` now returns the new probe token. Its structured output changes from the `gcx.mutation` schema to `gcx.synth.probe_token_reset`. The `name` and `id` fields move out of `target`, and `id` changes from a string to a number. Update scripts to read the top-level `token`, `name`, and `id` fields.
-- `gcx synthetic-monitoring probes deploy` now generates a Namespace, Secret, and Deployment. It no longer generates a ServiceAccount. The Secret keys change from `API_ACCESS_TOKEN` and `API_SERVER_URL` to `api-token` and `api-server-address`. Tools that process the generated manifests must accept the new resource and key names. An identity that applies the complete output must have permission to manage Namespace resources.
-- `gcx synthetic-monitoring probes deploy --api-server-url` now requires an address in `host:port` format. Values with a URL scheme or without a port now fail validation.
+**Datasources and queries**
+- Add BigQuery, MSSQL, and OpenSearch datasource support (#1106, #1059, #1252)
+- Add `gcx profiles series` for series discovery (#1086)
+- Add `-o dot` call-graph output to `gcx profiles query` (#1122)
+- Add the experimental `gcx traces baseline` command (#1168)
+- Require an Explore link on every query command (#1134)
 
-**New Features**
+**Alerting and IRM**
+- Add `gcx alert state-history` and notification history (#1296, #1258)
+- Add `gcx irm incidents update`, and honour incident severity (#1191)
+- Let a discovery command list its own catalog (#1193)
+- `alert-groups list --limit 0` now returns every alert group (#1213)
 
-- Added `--fix-plan` to `gcx instrumentation check`, with two explicit modes: `--fix-plan=local` produces a deterministic aggregation of the explanation docs' "How to fix" sections (offline, no billing, works on OSS/Enterprise), and `--fix-plan=assistant` synthesizes a prioritized plan with Grafana Assistant (BILLABLE, requires a Grafana Cloud context — see the Assistant pricing docs). The two modes are disjoint: assistant mode returns a clear error when preconditions aren't met rather than silently falling back to local. `--fix-plan` alone is rejected; users must specify a mode.
-- `GCX_KEYCHAIN=off` stops gcx using the OS credential store, leaving credentials in plaintext in the mode-`0600` config file. It is for machines whose credential store is permanently unavailable, such as headless boxes and CI runners. Credentials already in the store are not moved back out: their references are preserved and unreadable until the variable is unset. Replacing one instead writes plaintext and leaves the previous secret in the credential store unreferenced, which gcx warns about. See [Keychain credential storage](https://grafana.com/docs/grafana/latest/as-code/observability-as-code/grafana-cli/gcx/keychain/).
-- traces: add experimental `gcx traces baseline <trace-id>` to retrieve same-operation candidate traces (root identity, operation success, and topology fingerprint) to feed into `gcx traces diff`, with optional raw TraceQL filters when the unfiltered candidates are not valid comparisons.
-- traces: include Tempo `serviceStats` metadata (per-service span and error counts) in structured trace search output.
+**Configuration and credentials**
+- Add the trusted `credentials.keychain` policy (#1266)
+- Add `GCX_KEYCHAIN` to disable the OS credential store (#1242)
+- Make configuration load and write parameters explicit (#1272)
+
+**Agent Observability and Instrumentation**
+- Add `gcx agento11y experiments pull` for experiment bundles (#1267)
+- Add `gcx agento11y rules list-scores` for online scores (#1226)
+- Add `--fix-plan` to `gcx instrumentation check` (#1115)
+
+**Telemetry**
+- Break down `api` command usage by route, method, and type (#1094)
+- Report HTTP status, Kubernetes reason, and authentication method (#1118)
+- Report a canceled invocation with the outcome `canceled` (#1109)
 
 **Fixes**
+- `create -f` and `update -f` accept the K8s envelope that gcx itself prints, instead of discarding every field of the file (#1187)
+- `--jq` now works together with `-o agents` (#1287)
+- Normalize unstructured jq numbers (#1235)
+- Faro sends `extraLogLabels` under the `label` field (#1238)
+- Browser checks keep their notification channels (#1299)
 
-- Correct Fleet resource examples, preserve string collector IDs in resource manifests, and include the collector name and ID in successful create output.
+**Other**
+- Render provider tables with one generic codec (#1274, #1285, #1286, #1289)
+- Add declarative provider registration machinery (#931)
+- Set the manager identity from the gcx version (#1166)
+- Enforce the command naming conventions in CI (#1243)
+- Upgrade the Bubble Tea stack to v2 (#1253)
+- Refine the Grafana investigation skill (#1279, #1292)
+- Define how to mark an experimental command (#1220)
+- Update CONTRIBUTING, and add skill references (#1304, #1280)
 
 ## v1.2.0 (2026-08-25)
 
@@ -71,7 +288,8 @@
 - Add a Grafana version support policy to the documentation (#1197)
 - Regenerate the command line interface reference (#1224)
 
-
+- irm: `gcx irm oncall alert-groups list --limit 0` returns every matching alert group instead of stopping at 1000, and `--limit N` above 1000 is honored (#1157).
+- instrumentation: app and service writes (`clusters apps configure`/`remove`, `services include`/`exclude`/`clear`) no longer fail with `otlp_url is required`.
 ## v1.1.0 (2026-08-14)
 
 **Breaking changes**

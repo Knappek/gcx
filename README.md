@@ -21,6 +21,10 @@ gcx is a CLI for Grafana — Cloud, Enterprise, and OSS alike. It gives you and 
 
 gcx works with any agentic coding tool. It ships with a suite of agent skills for common workflows like alert investigation, dashboard creation and GitOps, SLO management, and observability setup - ready to use out of the box.
 
+Agent mode uses known identity signals, including Codex and Gemini CLI.
+For tools without a native signal, set `GCX_AGENT_NAME` to a supported label.
+See [agent detection and harness names](docs/design/environment-variables.md#agent-mode-variables).
+
 Contributing a new Grafana domain capability to gcx? Ask your coding agent to
 use [`integrate-with-gcx`](.claude/skills/integrate-with-gcx/SKILL.md)
 before choosing a command, provider, or datasource path.
@@ -28,6 +32,9 @@ before choosing a command, provider, or datasource path.
 ## Quick Start
 
 ```sh
+# New to Grafana Cloud? Create a free account; gcx connects to its first stack when you approve
+gcx signup
+
 # For Grafana Cloud instances
 gcx login prod --server https://<your-cloud-instance>.grafana.net  # select oauth, then press Enter to skip cloud token selection
 
@@ -43,6 +50,9 @@ gcx metrics query -d grafanacloud-usage 'grafanacloud_org_metrics_billable_serie
 # list and search your dashboards
 gcx dashboards list
 gcx dashboards search "node exporter"
+
+# render a dashboard, allowing up to three minutes for the render
+gcx dashboards snapshot my-dashboard --timeout 3m
 ```
 
 ## Installation
@@ -129,6 +139,14 @@ gcx completion fish > ~/.config/fish/completions/gcx.fish  # fish
 
 `gcx login` creates or re-authenticates a context. It auto-detects whether the server is Grafana Cloud (`*.grafana.net`) or on-premises and adjusts the prompt accordingly. Pick the path below that matches your setup.
 
+**No Grafana Cloud account yet:**
+
+```bash
+gcx signup
+```
+
+gcx opens the Grafana Cloud sign-up page. After you create the account, verify your email, create your first stack, and approve "Connect gcx", the browser returns to gcx, which saves the connection. For an account you already have but no stack URL at hand, run `gcx login` and leave the server empty, or `gcx login --cloud --oauth` from a script or agent. See [First-time Grafana Cloud login](docs/reference/login.md#first-time-grafana-cloud-login).
+
 **Grafana Cloud, browser-based OAuth (interactive, recommended):**
 
 ```bash
@@ -137,6 +155,10 @@ gcx login my-stack --server https://my-stack.grafana.net
 
 Opens a browser for OAuth, then saves the access token, refresh token, and proxy endpoint to the `my-stack` context's named stack entry and makes the context current. Best for day-to-day use on Cloud stacks. If OAuth doesn't suit your setup, pick "Service account token" at the prompt.
 
+gcx stops before the browser flow when the current process cannot write to the
+OS credential store. Agent users must approve the same command outside the
+sandbox. See [Keychain credential storage](docs/sources/keychain.md).
+
 **Service account token (Cloud or on-premises, recommended for CI/automation):**
 
 ```bash
@@ -144,6 +166,16 @@ gcx login my-grafana --server https://your-instance.grafana.net --token glsa_xxx
 ```
 
 Use a [Grafana service account token](https://grafana.com/docs/grafana/latest/administration/service-accounts/) with a role matching what the token needs to do: **Viewer** is enough for querying (metrics, logs, traces, profiles) and reading dashboards or folders; **Editor** covers pushing and editing dashboards and folders; managing datasource configuration needs **Admin**. On Grafana Cloud and Enterprise, RBAC custom roles can scope query access tighter (for example `datasources:read` plus `datasources:query` on specific datasources). Tokens work for both Cloud and on-premises and are recommended for automation. On-premises stacks can also use basic authentication or configured mTLS client certificates.
+
+**Basic authentication (self-hosted Grafana):**
+
+```bash
+gcx login my-grafana --server https://grafana.example.com --basic-auth --user admin
+```
+
+Prompts for a password without echoing it. For automation, supply `GRAFANA_PASSWORD`
+and add `--yes`. See [Basic authentication](docs/reference/login.md#basic-authentication)
+for credential storage, auth switching, and validation behaviour.
 
 **Grafana Cloud product APIs (SLO, Synthetic Monitoring, IRM, etc.):**
 
@@ -174,7 +206,36 @@ gcx cloud login --context my-stack
 
 Direct Cloud OAuth stores the OAuth token, expiry, granted scopes, and endpoint
 pair, but it is experimental and not every Cloud product command supports it
-yet. Use a CAP for full compatibility.
+yet. A CAP supports many Cloud management operations, but cannot enumerate user
+organisation memberships.
+
+To list your Cloud organisation memberships (slugs and roles):
+
+```bash
+gcx cloud login --context my-stack
+gcx cloud orgs list --context my-stack
+```
+
+Default Cloud logins include `profile` alongside stack-management scopes.
+Rerun login for existing credentials. `--scope profile` replaces the scope set,
+so use the default login to retain stack access. If `GRAFANA_CLOUD_TOKEN` or
+`cloud.<entry>.token` is set, unset it when using browser OAuth for organisation
+listing: access-policy tokens take precedence over OAuth tokens.
+The command uses the selected context's Cloud API
+endpoint, including dev and ops environments. Membership is not a guarantee of
+stack-creation permission. This differs from `gcx api /api/orgs`, which targets
+organisations inside a Grafana instance.
+
+Specify the organisation slug when creating a stack:
+
+```bash
+gcx cloud stacks create --org example-org --name my-stack --slug mystack --region us --dry-run
+```
+
+Review the preview, then omit `--dry-run` to create the stack. Both
+`stacks create` and `stacks list` require `--org <slug>`.
+Creation defaults to YAML with `name`, `orgSlug`, `slug`, `status` and `url`.
+Use `stacks get <slug>` for full details. Dry runs show the creation request.
 
 `gcx` derives the Cloud stack slug from `--server` when possible. Set it explicitly only for custom domains where gcx cannot derive it:
 
@@ -282,7 +343,10 @@ gcx resources list-types                        # discover available resource ty
 gcx dashboards list                             # list all dashboards
 gcx dashboards search "node exporter"           # full-text search by title/tag/folder
 gcx resources get folders                       # list all folders
+gcx resources get dashboards.dashboard.grafana.app/my-dash  # get by resource.group/name
 gcx alert rules list                            # list alert rules
+gcx alert time-intervals list                   # native notification time intervals
+gcx alert template-groups list                  # native notification template groups
 
 # Grafana Cloud products
 gcx synthetic-monitoring checks list            # list synthetic monitoring checks
@@ -293,6 +357,39 @@ gcx k6 load-tests list                          # list k6 load tests
 gcx logs query '{app="nginx"} |= "error"' --since 1h
 gcx traces query '{.cluster="dev-us-central-0"}' --since 1h
 ```
+
+Unnamed native time interval and template group manifests can share a push
+directory: distinct titles remain separate, and template kind is part of the
+identity. To delete these resources, use the dedicated `alert time-intervals delete`
+or `alert template-groups delete` commands, or pass pulled files with real API
+names to `resources delete -p`; unnamed files are rejected before any request for
+that file. Pull includes read-only native intervals and template groups by default for
+backup, audit, and diffing; `--skip-read-only` excludes them with a reason in the
+summary. Push and delete always skip them. Read commands still show them;
+`resources edit` refuses them before opening an editor. Provisioning export remains under
+`gcx alert mute-timings export` and covers Grafana-managed intervals only. See [server-derived resource names](docs/architecture/resource-model.md#server-derived-native-names)
+for portable push behavior.
+
+Contact points, notification policies, templates, and mute timings that gcx
+creates or updates through Grafana's provisioning API remain editable in the
+Grafana UI by default. Pass `--allow-ui-updates=false` to contact-point or
+mute-timing create and update commands, `alert templates upsert`, or
+`alert notification-policies set` to use Grafana's default provisioning
+ownership. Grafana then prevents UI edits to the provisioned item.
+To update a provisioned contact point, keep `--allow-ui-updates=false`.
+Grafana can reject an attempt to make an existing provisioned contact point
+editable in the UI because its provenance cannot be changed by that update.
+
+```bash
+gcx alert contact-points create -f contact-point.yaml --allow-ui-updates=false
+```
+
+For an empty dashboard or missing application telemetry, follow
+[Diagnose missing telemetry with gcx](docs/guides/diagnose-missing-telemetry.md).
+
+Synthetic Monitoring check manifests support optional `spec.folderUid` for folder
+assignment. See the [check management guide](claude-plugin/skills/synth-manage-checks/SKILL.md#step-3-build-yaml-definition)
+for create/update semantics and cross-stack push guidance.
 
 ## Install Agent Skills
 
@@ -320,12 +417,6 @@ For example: OpenAI Codex, OpenCode, and Pi. View the skills shipped in the bund
 
 ```sh
 gcx agent skills list
-24 skill(s) bundled with gcx
-
-SKILL                      INSTALLED    DESCRIPTION
-create-dashboard           yes          Design and create dashboards with datasource discovery and snapshot-based visual iteration.
-debug-with-grafana         yes          Structured workflow for investigating application problems with Grafana observability data.
-....
 ```
 
 Install the bundle into `~/.agents/skills` with:
@@ -346,6 +437,14 @@ bundled skills. After upgrading `gcx`, install a new skill by name. To refresh
 existing skills and add every newly bundled one, run `gcx agent skills update`
 followed by `gcx agent skills install --all` — `install --all` on its own stops
 with an error if any already-installed skill differs from the new bundle.
+
+`list` also shows locally present retired skills and their replacements. `update`
+warns about deprecated and retired skills, but never deletes retired files or
+installs replacements automatically. Remove an unwanted skill explicitly with
+`gcx agent skills uninstall <skill>`; retired names remain supported after their
+content leaves the bundle. Use the same `--dir` for each command when managing a
+non-default installation. See [skill lifecycle](claude-plugin/README.md#skill-lifecycle)
+for the catalog and ownership limits.
 
 To disable that reminder entirely, set:
 
@@ -380,8 +479,10 @@ def2  Memory leak in payment-svc                resolved   1h ago
 
 The agentic workflow above is one example. gcx supports a wide range of workflows:
 
-- **Resource GitOps** — Pull resources to local files, let your agent edit them, push back to Grafana (`gcx resources pull` / `gcx resources push`)
+- **Resource GitOps** — Pull writable resource types to local files, let your agent edit them, push back to Grafana (`gcx resources pull` / `gcx resources push`)
 - **Explore your data** — Discover datasources, metrics, labels, and log streams before writing queries (`gcx datasources list`, `gcx metrics labels`)
+- **Bring Assistant context into your agent** — Read a conversation by ID or a shared Grafana Assistant URL, including AI SDK main-thread transcripts (`gcx assistant conversation get <id-or-url> -o json`)
+- **Look up product docs** — Search and read Grafana documentation from the terminal (`gcx docs search`, `gcx docs get`)
 - **SLO management** — Create, monitor, and investigate SLOs from your terminal (`gcx slo definitions list`, `gcx slo reports list`)
 - **Onboarding & setup** — Instrument a Kubernetes cluster and configure Grafana Cloud products (`gcx instrumentation setup`)
 - **Observability as Code** — Scaffold a project, import existing dashboards as Go code, lint, and deploy (`gcx dev scaffold`, `gcx dev import`)
@@ -444,10 +545,10 @@ gcx provides dedicated commands for each Grafana Cloud product:
 | **Alerting** | `gcx alert` | `alert rules list`, `alert groups list` |
 | **k6 Cloud** | `gcx k6` | `k6 load-tests list`, `k6 runs list` |
 | **Fleet Management** | `gcx fleet` | `fleet pipelines list`, `fleet collectors list` |
-| **Knowledge Graph** | `gcx kg` | `kg status`, `kg entities list`, `kg entities inspect` |
+| **Knowledge Graph** | `gcx kg` | `kg status`, `kg entities list`, `kg entities inspect`, `kg graph query` |
 | **Frontend Observability** | `gcx frontend` | `frontend apps list`, `frontend apps get` |
 | **App Observability** | `gcx appo11y` | `appo11y overrides get`, `appo11y settings get` |
-| **Agent Observability** | `gcx agento11y` | `agento11y conversations list`, `agento11y agents list`, `agento11y rules list` |
+| **Agent Observability** | `gcx agento11y` | `agento11y conversations list`, `agento11y experiments pull`, `agento11y rules list` |
 | **Assistant** | `gcx assistant` | `assistant prompt`, `assistant investigations list`, `assistant mcp-servers list` |
 | **Adaptive Metrics** | `gcx metrics adaptive` | `metrics adaptive recommendations list`, `metrics adaptive rules list` |
 | **Adaptive Logs** | `gcx logs adaptive` | `logs adaptive patterns list`, `logs adaptive drop-rules list` |
@@ -481,6 +582,13 @@ gcx resources edit dashboards/my-dashboard
 # Delete a resource
 gcx resources delete dashboards/my-dashboard
 ```
+
+### Mobile Frontend Observability apps
+
+Mobile Frontend Observability app manifests set `spec.appType: mobile` and a mobile
+`spec.runtime`. See [`gcx frontend apps create`](docs/sources/cli-reference.md#gcx-frontend-apps-create-gcx-frontend-apps-create)
+for the runtimes and an example manifest, and
+[`gcx frontend apps update`](docs/sources/cli-reference.md#gcx-frontend-apps-update-gcx-frontend-apps-update) for what an update keeps.
 
 ## Alerting & Datasource Queries
 
@@ -527,6 +635,12 @@ gcx dev lint new dashboard my-rule              # create custom rule
 go run . && gcx resources push -p ./resources
 ```
 
+## Manage Assistant Watchers (experimental)
+
+Read Watcher configuration with `gcx assistant watchers list` and `get WATCHER`, inspect runtime observations with `status WATCHER`, or export manifests with `gcx resources pull watchers`. Apply configuration with `create -f FILE`, `update WATCHER -f FILE` or `gcx resources push`; remove a Watcher with `delete WATCHER --force`. Creation stays inactive and uncalibrated. Requires Grafana Cloud. See [Assistant Watchers](docs/reference/assistant-watchers.md).
+
+Pulled Watcher manifests can be pushed back unchanged. Applying configuration preserves calibrated content and learned state; meaningful settings outside the manifest model cause an explicit refusal.
+
 ## Raw API Access
 
 For anything not covered by built-in commands, use the API passthrough:
@@ -554,6 +668,10 @@ gcx resources push -p ./resources
 ```
 
 gcx push is idempotent — running it multiple times produces the same result. Folders are automatically pushed before dashboards to satisfy dependencies.
+
+Updates preserve the existing `kubectl` manager identity, including identities from
+`grafanactl` and older gcx releases. New resources use the stable identity `gcx`.
+See [manager metadata](docs/architecture/resource-model.md#manager-metadata).
 
 > **gcx resources push/pull vs GitSync:** Grafana's [Git Sync](https://grafana.com/docs/grafana/latest/as-code/observability-as-code/git-sync/) provides bi-directional sync between a git repo and Grafana for dashboards. `gcx resources push/pull` enables users to create their own as-code resource synchronisation workflows. `gcx resources push/pull` also works with all resources available in `gcx resources get`, not just dashboards.
 
@@ -592,6 +710,7 @@ jobs:
 - `--dry-run` on `push` and `delete` to preview changes
 - `--on-error abort|fail|ignore` to control error behavior
 - `-o json` or `-o yaml` for machine-parseable output
+- `--jq '<expr>' -o agents` for [jq with compact output and spilling](docs/design/output.md#16-jq-transformation)
 
 
 ## Documentation
@@ -603,7 +722,8 @@ jobs:
 | [Managing Resources](docs/guides/manage-resources.md) | Get, push, pull, delete, edit, validate |
 | [Dashboards as Code](docs/guides/dashboards-as-code.md) | Dashboard-as-code workflow with live dev server |
 | [Linting Resources](docs/guides/lint-resources.md) | Lint dashboards and alert rules with Rego policies |
-| [CLI Reference](docs/reference/cli/) | Full command reference (auto-generated) |
+| [CLI Reference](docs/sources/cli-reference.md) | Full command reference (auto-generated) |
+| [Engineering RFCs](docs/rfcs/README.md) | Proposals, technical designs, and review workflows |
 
 ## Usage statistics
 

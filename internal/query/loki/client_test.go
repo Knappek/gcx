@@ -2,11 +2,14 @@ package loki_test
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grafana/gcx/internal/config"
 	"github.com/grafana/gcx/internal/query/loki"
@@ -39,6 +42,90 @@ func TestBuildPathsEscapeDatasourceUID(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClient_Labels_Query(t *testing.T) {
+	var capturedPath string
+	var capturedQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		capturedQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":["app","job"]}`))
+	}))
+	defer server.Close()
+
+	cfg := config.NamespacedRESTConfig{Config: rest.Config{Host: server.URL}, Namespace: "default"}
+	client, err := loki.NewClient(cfg)
+	require.NoError(t, err)
+
+	resp, err := client.Labels(context.Background(), "loki-uid", `{app="backstage"}`)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/api/datasources/uid/loki-uid/resources/labels", capturedPath)
+	assert.Equal(t, `{app="backstage"}`, capturedQuery.Get("query"))
+	assert.Equal(t, []string{"app", "job"}, resp.Data)
+}
+
+func TestClient_Labels_NoQuery(t *testing.T) {
+	var capturedRawQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedRawQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":["app","job"]}`))
+	}))
+	defer server.Close()
+
+	cfg := config.NamespacedRESTConfig{Config: rest.Config{Host: server.URL}, Namespace: "default"}
+	client, err := loki.NewClient(cfg)
+	require.NoError(t, err)
+
+	_, err = client.Labels(context.Background(), "loki-uid", "")
+	require.NoError(t, err)
+
+	assert.Empty(t, capturedRawQuery)
+}
+
+func TestClient_LabelValues_Query(t *testing.T) {
+	var capturedPath string
+	var capturedQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		capturedQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":["backstage"]}`))
+	}))
+	defer server.Close()
+
+	cfg := config.NamespacedRESTConfig{Config: rest.Config{Host: server.URL}, Namespace: "default"}
+	client, err := loki.NewClient(cfg)
+	require.NoError(t, err)
+
+	resp, err := client.LabelValues(context.Background(), "loki-uid", "app", `{app="backstage"}`)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/api/datasources/uid/loki-uid/resources/label/app/values", capturedPath)
+	assert.Equal(t, `{app="backstage"}`, capturedQuery.Get("query"))
+	assert.Equal(t, []string{"backstage"}, resp.Data)
+}
+
+func TestClient_LabelValues_NoQuery(t *testing.T) {
+	var capturedRawQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedRawQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":["backstage"]}`))
+	}))
+	defer server.Close()
+
+	cfg := config.NamespacedRESTConfig{Config: rest.Config{Host: server.URL}, Namespace: "default"}
+	client, err := loki.NewClient(cfg)
+	require.NoError(t, err)
+
+	_, err = client.LabelValues(context.Background(), "loki-uid", "app", "")
+	require.NoError(t, err)
+
+	assert.Empty(t, capturedRawQuery)
 }
 
 func TestQuery_FallsBackOn403(t *testing.T) {
@@ -97,4 +184,39 @@ func TestQuery_ReturnsTypedAPIErrorForGrafanaEnvelope(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
 	assert.Equal(t, "parse error at line 1, col 12: syntax error: unexpected IDENTIFIER, expecting STRING", apiErr.Message)
 	assert.Equal(t, "downstream", apiErr.ErrorSource)
+}
+
+func TestQuery_SendsMaxLines(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":{"A":{"frames":[]}}}`))
+	}))
+	defer server.Close()
+
+	cfg := config.NamespacedRESTConfig{
+		Config:    rest.Config{Host: server.URL},
+		Namespace: "default",
+	}
+	client, err := loki.NewClient(cfg)
+	require.NoError(t, err)
+
+	start := time.Unix(1, 0)
+	end := time.Unix(2, 0)
+	_, err = client.Query(context.Background(), "loki-uid", loki.QueryRequest{
+		Query: `{job="grafana"}`,
+		Start: start,
+		End:   end,
+		Limit: 1000,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, gotBody)
+
+	var payload struct {
+		Queries []map[string]any `json:"queries"`
+	}
+	require.NoError(t, json.Unmarshal(gotBody, &payload))
+	require.Len(t, payload.Queries, 1)
+	assert.InDelta(t, float64(1000), payload.Queries[0]["maxLines"], 0)
 }
