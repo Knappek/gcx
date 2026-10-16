@@ -406,8 +406,11 @@ func (r *RegistryIndex) filterCandidates(
 		}
 
 		for _, gk := range groupKindCandidates {
+			if resolvedGroup != "" && gk.Group == resolvedGroup {
+				return r.resolveDescriptor(gk, version)
+			}
 			desc, ok := r.resolveDescriptor(gk, version)
-			if ok && (gk.Group == resolvedGroup || resources.MatchesGroupAlias(desc.GroupVersionKind(), group)) {
+			if ok && resources.MatchesGroupAlias(desc.GroupVersionKind(), group) {
 				return desc, true
 			}
 		}
@@ -471,20 +474,16 @@ func (r *RegistryIndex) filterAllCandidates(
 		return resources.Descriptors{desc}, true
 	}
 
-	_, knownGroup := r.longGroups[group]
-	knownGroup = knownGroup || r.shortGroups[group] != ""
 	var targetGroups []string
-	if group != "" && knownGroup {
-		// Check if the group was provided in the short form.
+	if group != "" {
 		if g, ok := r.shortGroups[group]; ok {
 			targetGroups = []string{g}
 		} else if _, ok := r.longGroups[group]; ok {
-			// Check if the group was provided in the long form.
 			targetGroups = []string{group}
-		} else {
-			return nil, false
 		}
-	} else {
+	}
+	knownGroup := len(targetGroups) > 0
+	if !knownGroup {
 		// No known group specified, collect all groups that support this resource.
 		groupSet := make(map[string]struct{})
 		for _, gk := range groupKindCandidates {

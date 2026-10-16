@@ -62,5 +62,5 @@ func (d Descriptor) GroupVersionResource() schema.GroupVersionResource {
 
 // Matches returns true if the descriptor matches the given GroupVersionKind.
 func (d Descriptor) Matches(gvk schema.GroupVersionKind) bool {
-	return normalizeGroupAlias(d.GroupVersionKind()) == normalizeGroupAlias(gvk)
+	return NormalizeGVK(d.GroupVersionKind()) == NormalizeGVK(gvk)
 }

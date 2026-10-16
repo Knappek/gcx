@@ -1282,3 +1282,38 @@ func TestRegistryIndex_StaticFallbackFirstRegistrationWins(t *testing.T) {
 	require.True(t, ok)
 	assert.ElementsMatch(t, resources.Descriptors{first, second}, all)
 }
+
+func TestRegistryIndex_QualifiedGroupPrecedence(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		group       string
+		version     string
+		descriptors resources.Descriptors
+	}{
+		{
+			name: "unknown group does not match empty group", group: "unknown", version: "v1",
+			descriptors: resources.Descriptors{
+				{GroupVersion: schema.GroupVersion{Version: "v1"}, Kind: "Widget", Plural: "widgets"},
+			},
+		},
+		{
+			name: "known group does not fall through to another kind", group: "example.app", version: "v2",
+			descriptors: resources.Descriptors{
+				{GroupVersion: schema.GroupVersion{Group: "example.app", Version: "v1"}, Kind: "Widget", Plural: "widgets"},
+				{GroupVersion: schema.GroupVersion{Group: "example.app", Version: "v2"}, Kind: "OtherWidget", Plural: "widgets"},
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			index := discovery.NewRegistryIndex()
+			for _, desc := range tt.descriptors {
+				index.RegisterStatic(desc, nil)
+			}
+			partial := resources.PartialGVK{Resource: "widgets", Group: tt.group, Version: tt.version}
+			_, ok := index.LookupPartialGVK(partial)
+			assert.False(t, ok)
+			_, ok = index.LookupAllVersionsForPartialGVK(partial)
+			assert.False(t, ok)
+		})
+	}
+}

@@ -174,11 +174,12 @@ func (r *Registry) MakeFilters(opts MakeFiltersOptions) (resources.Filters, erro
 			return nil, err
 		}
 
+		group := selector.GroupVersionKind.Group
 		for _, filter := range selectorFilters {
-			group := selector.GroupVersionKind.Group
-			if opts.Warn != nil && !warned[group] && resources.MatchesGroupAlias(filter.Descriptor.GroupVersionKind(), group) {
+			canonicalGroup := filter.Descriptor.GroupVersion.Group
+			if opts.Warn != nil && !warned[canonicalGroup] && resources.MatchesGroupAlias(filter.Descriptor.GroupVersionKind(), group) {
 				output.EmitWarn(opts.Warn, fmt.Sprintf("resource group %q is deprecated; use %q instead", group, filter.Descriptor.GroupVersion.Group))
-				warned[group] = true
+				warned[canonicalGroup] = true
 			}
 		}
 		filters = append(filters, selectorFilters...)

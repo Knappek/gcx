@@ -245,48 +245,59 @@ current-context: workflow
 						assert.Equal(t, "sample", metadata["name"])
 						assert.Equal(t, "stacks-12345", metadata["namespace"])
 						assert.Equal(t, spec, manifest["spec"])
-
-						for _, group := range []string{"agento11y", "sigil"} {
-							manifestContents := bytes.ReplaceAll(contents, []byte("agento11y.ext.grafana.app/v1alpha1"), []byte(group+".ext.grafana.app/v1alpha1"))
-							require.NoError(t, os.WriteFile(filename, manifestContents, 0o600))
-							for _, pushSelector := range selectors {
-								for _, operation := range []string{"create", "update"} {
-									t.Run(group+"-manifest/"+pushSelector.name+"/"+operation, func(t *testing.T) {
-										server.reset(operation == "update")
-										selector := kind.plural + pushSelector.suffix
-										if pushSelector.named {
-											selector += "/sample"
-										}
-										stdout, stderr := runAgento11yResourceWorkflow(t, configPath, "push", selector, "-p", path, "-o", "json")
-										assert.Equal(t, strings.Contains(pushSelector.suffix, "sigil"), strings.Contains(stderr, "resource group"), stderr)
-										assert.Equal(t, group == "sigil", strings.Contains(stderr, "apiVersion"), stderr)
-										var result output.BatchMutation
-										require.NoError(t, json.Unmarshal(stdout, &result))
-										assert.Equal(t, output.MutationSummary{Succeeded: 1}, result.Summary)
-										assert.Empty(t, result.Failures)
-
-										method := kind.updateMethod
-										mutationPath := agento11yWorkflowBase + kind.endpoint
-										if operation == "create" {
-											method = http.MethodPost
-										}
-										if method != http.MethodPost {
-											mutationPath += "/sample"
-										}
-										body := maps.Clone(spec)
-										if method != http.MethodPatch {
-											body[kind.idField] = "sample"
-										}
-										assert.Equal(t, []agento11yWorkflowRequest{
-											{method: http.MethodGet, path: agento11yWorkflowBase + kind.endpoint + "/sample"},
-											{method: method, path: mutationPath, body: body},
-										}, server.recorded())
-									})
-								}
-							}
-						}
 					})
 				}
+			}
+
+			for _, format := range []string{"json", "yaml"} {
+				t.Run("push/"+format, func(t *testing.T) {
+					testutils.SetAgentMode(t, format == "yaml")
+					server.reset(true)
+					path := t.TempDir()
+					runAgento11yResourceWorkflow(t, configPath, "pull", kind.plural, "-p", path, "-o", format)
+					filename := filepath.Join(path, kind.plural+".v1alpha1.agento11y.ext.grafana.app", "sample."+format)
+					contents, err := os.ReadFile(filename)
+					require.NoError(t, err)
+					for _, group := range []string{"agento11y", "sigil"} {
+						manifestContents := bytes.ReplaceAll(contents, []byte("agento11y.ext.grafana.app/v1alpha1"), []byte(group+".ext.grafana.app/v1alpha1"))
+						require.NoError(t, os.WriteFile(filename, manifestContents, 0o600))
+						for _, pushSelector := range selectors {
+							for _, operation := range []string{"create", "update"} {
+								t.Run(group+"-manifest/"+pushSelector.name+"/"+operation, func(t *testing.T) {
+									server.reset(operation == "update")
+									selector := kind.plural + pushSelector.suffix
+									if pushSelector.named {
+										selector += "/sample"
+									}
+									stdout, stderr := runAgento11yResourceWorkflow(t, configPath, "push", selector, "-p", path, "-o", "json")
+									assert.Equal(t, strings.Contains(pushSelector.suffix, "sigil"), strings.Contains(stderr, "resource group"), stderr)
+									assert.Equal(t, group == "sigil", strings.Contains(stderr, "apiVersion"), stderr)
+									var result output.BatchMutation
+									require.NoError(t, json.Unmarshal(stdout, &result))
+									assert.Equal(t, output.MutationSummary{Succeeded: 1}, result.Summary)
+									assert.Empty(t, result.Failures)
+
+									method := kind.updateMethod
+									mutationPath := agento11yWorkflowBase + kind.endpoint
+									if operation == "create" {
+										method = http.MethodPost
+									}
+									if method != http.MethodPost {
+										mutationPath += "/sample"
+									}
+									body := maps.Clone(spec)
+									if method != http.MethodPatch {
+										body[kind.idField] = "sample"
+									}
+									assert.Equal(t, []agento11yWorkflowRequest{
+										{method: http.MethodGet, path: agento11yWorkflowBase + kind.endpoint + "/sample"},
+										{method: method, path: mutationPath, body: body},
+									}, server.recorded())
+								})
+							}
+						}
+					}
+				})
 			}
 		})
 	}

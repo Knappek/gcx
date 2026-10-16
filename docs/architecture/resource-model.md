@@ -525,7 +525,8 @@ in their `init()` functions alongside `providers.Register()`.
 Unlike `Aliases` (resource names), it applies to manifests and group-qualified
 selectors. Registration adds aliases to `resources` without extra discovery entries.
 File filtering, push, and delete accept old manifests; discovery accepts full and
-short group names. Output uses the descriptor's group.
+short group names. Descriptor matching uses the same GVK normalisation as routing,
+including per-plugin datasource groups. Output uses the descriptor's group.
 
 Agent Observability uses `agento11y.ext.grafana.app/v1alpha1` for `evaluators`,
 `evalrules`, `hookrules`, and `collections`. Its `sigil.ext.grafana.app` alias keeps

@@ -346,6 +346,24 @@ func TestRegistry_MakeFilters_GroupAliasWarnings(t *testing.T) {
 	}
 }
 
+func TestRegistry_MakeFilters_GroupAliasWarningSpellings(t *testing.T) {
+	testutils.SetAgentMode(t, false)
+	desc := resources.Descriptor{
+		GroupVersion: schema.GroupVersion{Group: "current.spellings-test.app", Version: "v1"},
+		Kind:         "Widget", Plural: "widgets", Singular: "widget",
+	}
+	resources.RegisterGroupAliases(desc.GroupVersionKind(), []string{"legacy.spellings-test.app"})
+	reg := discovery.NewStaticRegistry()
+	reg.RegisterAdapter(nil, desc, nil)
+	selectors, err := resources.ParseSelectors([]string{"widgets.legacy/one", "widgets.v1.legacy.spellings-test.app/two"})
+	require.NoError(t, err)
+	var warnings bytes.Buffer
+	filters, err := reg.MakeFilters(discovery.MakeFiltersOptions{Selectors: selectors, Warn: &warnings})
+	require.NoError(t, err)
+	require.Len(t, filters, 2)
+	assert.Equal(t, "warn: resource group \"legacy\" is deprecated; use \"current.spellings-test.app\" instead\n", warnings.String())
+}
+
 func TestRegistry_MakeFilters_WithOptions(t *testing.T) {
 	tests := []struct {
 		name                   string
