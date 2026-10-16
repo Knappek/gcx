@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/grafana/gcx/internal/config"
@@ -108,6 +109,9 @@ type PullRequest struct {
 	// Whether to include resources managed by other tools.
 	ExcludeManaged bool
 
+	// Whether read-only native objects should be excluded from artifact operations.
+	ExcludeReadOnly bool
+
 	// Whether the operation should stop upon encountering an error.
 	StopOnError bool
 
@@ -115,6 +119,9 @@ type PullRequest struct {
 	// Use Limit=1 for introspection operations (e.g. --json ? field discovery) to
 	// avoid triggering a full list operation.
 	Limit int64
+
+	// IdentityOnlyDelete uses optional identity selection before configuration reads.
+	IdentityOnlyDelete bool
 }
 
 // Pull pulls resources from Grafana.
@@ -140,14 +147,21 @@ func (p *Puller) Pull(ctx context.Context, req PullRequest) (*OperationSummary, 
 	logger := logging.FromContext(ctx)
 	logger.Debug("Pulling resources")
 
+	invocationCtx := ctx
 	errg, ctx := errgroup.WithContext(ctx)
 	errg.SetLimit(p.maxConcurrentListRequests)
 	partialRes := make([][]unstructured.Unstructured, len(filters))
+	identitySelected := make([]bool, len(filters))
 
 	for idx, filt := range filters {
 		errg.Go(func() error {
-			var err error
-			partialRes[idx], err = p.pullFilter(ctx, req, filt, summary)
+			items, handled, err := p.selectDeleteFilter(ctx, invocationCtx, req, filt, summary)
+			if handled {
+				identitySelected[idx] = true
+				partialRes[idx] = items
+				return err
+			}
+			partialRes[idx], err = p.pullFilter(ctx, invocationCtx, req, filt, summary)
 			return err
 		})
 	}
@@ -163,7 +177,10 @@ func (p *Puller) Pull(ctx context.Context, req PullRequest) (*OperationSummary, 
 	}); ok {
 		selections := make([]adapter.PullSelection, len(filters))
 		for idx, filter := range filters {
-			selections[idx] = adapter.PullSelection{Filter: filter, Items: partialRes[idx]}
+			selections[idx] = adapter.PullSelection{Filter: filter}
+			if !identitySelected[idx] {
+				selections[idx].Items = partialRes[idx]
+			}
 		}
 		var err error
 		preflight, err = client.NewPullPreflight(pullCtx, selections)
@@ -182,15 +199,21 @@ func (p *Puller) Pull(ctx context.Context, req PullRequest) (*OperationSummary, 
 
 			// TODO: this should be replaced by a more generic mechanism,
 			// e.g. label & annotation filters.
+			if req.ExcludeReadOnly && resources.IsReadOnlyNative(&res.Object) {
+				summary.RecordSkipped("read-only")
+				logger.Info("Skipping read-only resource", "kind", res.Kind(), "name", res.Name())
+				continue
+			}
+
 			if !res.IsManaged() && req.ExcludeManaged {
 				continue
 			}
 
-			if preflight != nil {
+			if preflight != nil && !identitySelected[idx] {
 				if err := preflight(pullCtx, filters[idx], item); err != nil {
 					logger.Warn("Failed resource identity preflight", logs.Err(err))
 					summary.RecordFailure(res, err)
-					if req.StopOnError {
+					if req.StopOnError || isPullCancellation(invocationCtx, err) {
 						return summary, err
 					}
 					continue
@@ -198,7 +221,7 @@ func (p *Puller) Pull(ctx context.Context, req PullRequest) (*OperationSummary, 
 			}
 
 			if err := p.process(res, req.Processors); err != nil {
-				if req.StopOnError {
+				if req.StopOnError || isPullCancellation(invocationCtx, err) {
 					return summary, err
 				}
 
@@ -214,9 +237,17 @@ func (p *Puller) Pull(ctx context.Context, req PullRequest) (*OperationSummary, 
 	return summary, nil
 }
 
+// A cancelled invocation must not become a batch failure. Match its own cause,
+// rather than the errgroup cause, which may be an unrelated sibling failure.
+// Signal contexts can carry a cause that does not wrap context.Canceled.
+func isPullCancellation(ctx context.Context, err error) bool {
+	return errors.Is(err, context.Canceled) ||
+		(ctx.Err() != nil && errors.Is(err, context.Cause(ctx)))
+}
+
 // pullFilter fetches one selection and records partial coverage before the
 // caller processes or inserts any of its items.
-func (p *Puller) pullFilter(ctx context.Context, req PullRequest, filt resources.Filter, summary *OperationSummary) ([]unstructured.Unstructured, error) {
+func (p *Puller) pullFilter(ctx, invocationCtx context.Context, req PullRequest, filt resources.Filter, summary *OperationSummary) ([]unstructured.Unstructured, error) {
 	logger := logging.FromContext(ctx)
 	var result []unstructured.Unstructured
 
@@ -235,19 +266,21 @@ func (p *Puller) pullFilter(ctx context.Context, req PullRequest, filt resources
 		}
 		if err != nil {
 			switch {
+			case isPullCancellation(invocationCtx, err):
+				return nil, err
 			case req.Filters.IsEmpty() && errors.Is(err, adapter.ErrUnavailable):
 				logger.Debug("Skipping unavailable resource type", logs.Err(err), slog.String("cmd", filt.String()))
-				summary.RecordSkipped()
+				summary.RecordSkipped("unavailable")
 			case isUnsupportedResourceType(err):
 				// 404/405 = sub-resource that can't be listed; skip silently
 				// regardless of StopOnError — these are never actionable.
 				logger.Debug("Skipping unsupported resource type", logs.Err(err), slog.String("cmd", filt.String()))
-				summary.RecordSkipped()
+				summary.RecordSkipped("not listable")
 			case req.StopOnError:
 				return nil, err
 			default:
 				logger.Warn("Could not pull resources", logs.Err(err), slog.String("cmd", filt.String()))
-				summary.RecordFailure(nil, err)
+				summary.RecordFailure(nil, fmt.Errorf("%s: %w", filt.String(), err))
 			}
 		} else {
 			if res.GetContinue() != "" {
@@ -267,16 +300,18 @@ func (p *Puller) pullFilter(ctx context.Context, req PullRequest, filt resources
 		}
 		if err != nil {
 			switch {
+			case isPullCancellation(invocationCtx, err):
+				return nil, err
 			case isUnsupportedResourceType(err):
 				// 404/405 = sub-resource that can't be listed; skip silently
 				// regardless of StopOnError — these are never actionable.
 				logger.Debug("Skipping unsupported resource type", logs.Err(err), slog.String("cmd", filt.String()))
-				summary.RecordSkipped()
+				summary.RecordSkipped("not listable")
 			case req.StopOnError:
 				return nil, err
 			default:
 				logger.Warn("Could not pull resources", logs.Err(err), slog.String("cmd", filt.String()))
-				summary.RecordFailure(nil, err)
+				summary.RecordFailure(nil, fmt.Errorf("%s: %w", filt.String(), err))
 			}
 		} else {
 			result = res
@@ -284,11 +319,11 @@ func (p *Puller) pullFilter(ctx context.Context, req PullRequest, filt resources
 	case resources.FilterTypeSingle:
 		res, err := p.client.Get(ctx, filt.Descriptor, filt.ResourceUIDs[0], metav1.GetOptions{})
 		if err != nil {
-			if req.StopOnError {
+			if req.StopOnError || isPullCancellation(invocationCtx, err) {
 				return nil, err
 			}
 			logger.Warn("Could not pull resource", logs.Err(err), slog.String("cmd", filt.String()))
-			summary.RecordFailure(nil, err)
+			summary.RecordFailure(nil, fmt.Errorf("%s: %w", filt.String(), err))
 		} else {
 			result = []unstructured.Unstructured{*res}
 		}
@@ -312,7 +347,7 @@ func recordPartialRead(ctx context.Context, summary *OperationSummary, partial a
 		logging.FromContext(ctx).Warn("Could not pull resource", logs.Err(failure.Err))
 	}
 	for range partial.SkippedReads() {
-		summary.RecordSkipped()
+		summary.RecordSkipped("not readable")
 	}
 	if stopOnError && len(failures) > 0 {
 		return partial
@@ -340,4 +375,32 @@ func (p *Puller) process(res *resources.Resource, processors []Processor) error 
 	}
 
 	return nil
+}
+
+// selectDeleteFilter handles identity selection without exporting configuration.
+func (p *Puller) selectDeleteFilter(ctx, invocationCtx context.Context, req PullRequest, filt resources.Filter, summary *OperationSummary) ([]unstructured.Unstructured, bool, error) {
+	if !req.IdentityOnlyDelete {
+		return nil, false, nil
+	}
+	client, ok := p.client.(deleteSelectionClient)
+	if !ok {
+		return nil, false, nil
+	}
+	items, handled, err := client.SelectDelete(ctx, filt, nil)
+	if !handled || err == nil {
+		return items, handled, err
+	}
+	if isPullCancellation(invocationCtx, err) {
+		return nil, true, err
+	}
+	if req.Filters.IsEmpty() && errors.Is(err, adapter.ErrUnavailable) {
+		summary.RecordSkipped("unavailable")
+		return nil, true, nil
+	}
+	if req.StopOnError {
+		return nil, true, err
+	}
+	summary.RecordFailure(nil, err)
+	// Collection failure belongs to the summary; other selected kinds remain usable.
+	return nil, true, nil
 }

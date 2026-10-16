@@ -144,6 +144,7 @@ func deleteCmd(configOpts *cmdconfig.Options) *cobra.Command {
 			}
 
 			var res resources.Resources
+			var fetchSummary *remote.OperationSummary
 
 			// Load resources by selectors only
 			if len(opts.Path) == 0 {
@@ -152,14 +153,17 @@ func deleteCmd(configOpts *cmdconfig.Options) *cobra.Command {
 				// before reads so an empty fleet or export failure cannot turn a
 				// refused deletion into a successful zero-resource batch.
 				fetchRes, err := fetchResources(ctx, FetchRequest{
-					Config:      cfg,
-					StopOnError: opts.OnError.StopOnError(),
+					Config:             cfg,
+					IdentityOnlyDelete: true,
+					StopOnError:        opts.OnError.StopOnError(),
+					ExcludeReadOnly:    true,
 				}, args, rejectUnsupportedDelete)
 				if err != nil {
 					return err
 				}
 
 				res = fetchRes.Resources
+				fetchSummary = fetchRes.PullSummary
 			} else {
 				// Load resources from the filesystem
 				res = *resources.NewResources()
@@ -180,13 +184,19 @@ func deleteCmd(configOpts *cmdconfig.Options) *cobra.Command {
 			}
 
 			req := remote.DeleteRequest{
-				Resources:      &res,
-				MaxConcurrency: opts.MaxConcurrent,
-				StopOnError:    opts.OnError.StopOnError(),
-				DryRun:         opts.DryRun,
+				Resources:              &res,
+				MaxConcurrency:         opts.MaxConcurrent,
+				StopOnError:            opts.OnError.StopOnError(),
+				DryRun:                 opts.DryRun,
+				ResolveLocalIdentities: len(opts.Path) > 0,
 			}
 
 			summary, err := deleter.Delete(ctx, req)
+			if summary != nil && fetchSummary != nil {
+				for _, failure := range fetchSummary.Failures() {
+					summary.RecordFailure(failure.Resource, failure.Error)
+				}
+			}
 			if err != nil {
 				if summary != nil {
 					// Hard abort: the returned error is the result document
@@ -197,6 +207,13 @@ func deleteCmd(configOpts *cmdconfig.Options) *cobra.Command {
 				return err
 			}
 
+			if fetchSummary != nil {
+				for reason, count := range fetchSummary.SkippedReasons() {
+					for range count {
+						summary.RecordSkipped(reason)
+					}
+				}
+			}
 			result := batchMutationFromSummary("deleted", summary, opts.DryRun)
 			// The deletion is done and its counts are final; a later rendering
 			// or stdout failure does not restore anything.

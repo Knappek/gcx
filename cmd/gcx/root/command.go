@@ -202,7 +202,11 @@ func newCommand(version string, pp []providers.Provider) *cobra.Command {
 			ctx = internalconfig.ContextWithWarningWriter(ctx, cmd.ErrOrStderr())
 
 			// Thread --context into Go context so provider config loaders
-			// can discover it via config.ContextNameFromCtx().
+			// can discover it via config.ContextNameFromCtx(). GCX_CONTEXT is
+			// the flag's environment equivalent and applies when it is unset.
+			if contextName == "" {
+				contextName = os.Getenv(internalconfig.ContextEnvVar)
+			}
 			if contextName != "" {
 				ctx = internalconfig.ContextWithName(ctx, contextName)
 			}
@@ -228,11 +232,11 @@ func newCommand(version string, pp []providers.Provider) *cobra.Command {
 		},
 	}
 
-	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		if strings.Contains(err.Error(), "--log-http-payload") && strings.Contains(err.Error(), "flag has been renamed") {
-			return errors.New("--log-http-payload has been renamed; use --insecure-log-http-payload instead")
+			err = errors.New("--log-http-payload has been renamed; use --insecure-log-http-payload instead")
 		}
-		return err
+		return commandUsageError(cmd, err)
 	})
 
 	defaultHelp := rootCmd.HelpFunc()
@@ -300,6 +304,8 @@ func newCommand(version string, pp []providers.Provider) *cobra.Command {
 	// that Cobra will execute.
 	rootCmd.InitDefaultHelpCmd()
 	rootCmd.InitDefaultCompletionCmd()
+
+	wrapArgumentErrors(rootCmd)
 
 	// Apply centralized agent annotations (token_cost, llm_hint) to the
 	// full command tree. Must run after all commands are registered.
