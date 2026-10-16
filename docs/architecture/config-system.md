@@ -551,35 +551,14 @@ Returns `nil` if `CurrentContext` is empty or not found — callers must check.
 
 ### Strict Context Mode
 
-`GCX_REQUIRE_CONTEXT` removes step 2 from the selection order above: an
-invocation must name its own target, or it is refused before it runs. It exists
-because `current-context` is shared mutable state — on a workstation holding
-many contexts, one session's `gcx config use-context` silently retargets every
-later command in every other session, including commands run by coding agents.
+Set `GCX_REQUIRE_CONTEXT=true` to require `--context <name>` on commands that
+reach Grafana, preventing another session's `config use-context` from retargeting
+them. Missing context selection exits with code 2; local commands are exempt.
+`GRAFANA_SERVER` alone does not satisfy the guard, except for `gcx login`, which
+also accepts a context argument or `--server`.
 
-An invocation satisfies the requirement with `--context <name>` (root's
-persistent flag or a subtree-bound one), which names the destination for that
-invocation alone. Anything else fails with exit code 2.
-
-A `GRAFANA_SERVER` override does not satisfy it. The override is applied onto
-the context that `current-context` selects, which still supplies the token,
-`org-id`, `stack-id`, TLS, provider config, and — for `gcx cloud` — the cloud
-entry, so it does not stop a retarget. The one exception is `gcx login`, which
-derives its target context from `CONTEXT_NAME`, `--server`, or `GRAFANA_SERVER`
-before it falls back to `current-context`; any of those satisfies the guard
-there. `gcx cloud login` has no such argument and needs `--context`.
-
-The check lives in `EnforceContextSelection` (`cmd/gcx/root/contextguard.go`) and
-runs pre-dispatch from `main()`, not in root's `PersistentPreRun`. Cobra runs
-only the closest `PersistentPreRun` in the chain, and several provider groups
-define their own and chain back to root's by hand, so a guard in that hook would
-be skipped by any subtree that forgot to chain — a fail-open outcome. Commands
-are enforced by default. `internal/agent/context_policy.go` lists the
-`cmd.CommandPath()` prefixes that are not (local metadata, shell plumbing, and
-config-file editing), using the same matcher as the Cloud-only availability
-registry. Commands whose reach depends on a flag are decided in the guard:
-`gcx commands` only with `--validate`, and `gcx instrumentation check` only
-with `--fix-plan=assistant`.
+The guard runs before Cobra dispatch in `cmd/gcx/root/contextguard.go` so subtree
+hooks cannot bypass it. Exempt paths live in `internal/agent/context_policy.go`.
 
 ---
 
