@@ -1,10 +1,11 @@
 ---
 name: agento11y-instrument
 description: >-
-  Instruments a developer's own LLM app or agent with the Grafana Agent
-  Observability SDKs, then uses gcx to verify that generations arrive. Use for
-  "instrument my app" or missing generations. Not for offline tests (use
-  agento11y-test-starter) or eval rules and guards (use agento11y-prod-setup).
+  Instruments a developer's own LLM app or repairs missing generations and empty
+  Performance charts in Grafana Agent Observability. Applies confirmed changes
+  and verifies generation ingest, traces, and metrics. Excludes coding-agent
+  telemetry plugins. For offline tests use agento11y-test-starter; for eval rules
+  and guards use agento11y-prod-setup.
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch
 ---
 
