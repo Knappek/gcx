@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/gcx/internal/logs"
 	"github.com/grafana/gcx/internal/output"
 	"github.com/grafana/gcx/internal/resources"
+	"github.com/grafana/gcx/internal/resources/adapter"
 	"github.com/grafana/grafana-app-sdk/logging"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -198,6 +199,11 @@ func (reader *FSReader) Read(
 			if reader.Warn != nil && !warned[gvk.GroupVersion()] && resources.MatchesGroupAlias(target, gvk.Group) {
 				output.EmitWarn(reader.Warn, fmt.Sprintf("apiVersion %q is deprecated; use %q instead", gvk.GroupVersion(), target.GroupVersion()))
 				warned[gvk.GroupVersion()] = true
+			}
+
+			if adapter.RetainsLocalDuplicates(obj.GroupVersionKind()) {
+				dst.AddDistinct(&obj)
+				continue
 			}
 
 			if _, ok := idx[objIdx{
