@@ -32,7 +32,7 @@ type statsPreflightOpts struct {
 }
 
 func (opts *statsPreflightOpts) setup(flags *pflag.FlagSet) {
-	flags.BoolVar(&opts.SkipStats, "skip-stats", false, "Skip the index-stats estimate that is otherwise reported before every query")
+	flags.BoolVar(&opts.SkipStats, "skip-stats", false, "Skip the advisory index-stats estimate reported before every query (does not bypass the Grafana Cloud query guardrail)")
 	flags.StringVar(&opts.StatsWarnBytes, "stats-warn-bytes", "100GiB", "Warn, and suggest narrowing the query, if index-stats reports more than this many bytes would be scanned (e.g. '500MiB', '2GiB')")
 }
 

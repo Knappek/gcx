@@ -34,7 +34,13 @@ Instant vs range is deduced from time flags: no time flags = instant query,
 Use --share-link to print the equivalent Grafana Explore URL, or --open to
 open it in your browser after the query succeeds.
 
-Before executing, a pre-flight index-stats check estimates the bytes this
+On Grafana Cloud targets, a query cost guardrail runs first: the query is
+estimated with Loki index-stats and refused, with guidance on how to narrow it,
+when it exceeds the tenant's byte budget or time-range cap. There is no flag to
+bypass it. In agent mode a query that cannot be assessed is also refused.
+Self-hosted Grafana targets are not guarded.
+
+Otherwise, a pre-flight index-stats check estimates the bytes this
 query would scan and reports it on stderr. Above --stats-warn-bytes (default
 100GiB) the message becomes a warning suggesting more filters or a shorter
 time range; the query still runs. Use --skip-stats to skip the check.
@@ -103,7 +109,9 @@ range alone would suggest.`,
 				Step:  step,
 			}
 
-			reportStatsPreflight(ctx, client, cmd.ErrOrStderr(), datasourceUID, expr, req.IsRange(), start, end, now, preflight)
+			if err := guardOrPreflight(ctx, cfgCtx, cfg, client, cmd.ErrOrStderr(), datasourceUID, expr, req.IsRange(), start, end, now, preflight); err != nil {
+				return err
+			}
 
 			resp, err := client.MetricQuery(ctx, datasourceUID, req)
 			if err != nil {
