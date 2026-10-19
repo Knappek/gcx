@@ -130,12 +130,11 @@ type Event struct {
 	// including success and canceled.
 	GrafanaAuthMethod string `json:"grafana_auth_method,omitempty"`
 
-	// LoginStage is the last step `gcx login` or `gcx signup` entered, clamped
-	// to the vocabulary in loginstage.go. "complete" means the connection was
-	// saved, so it is the only reliable success signal for a login: an
-	// abandoned prompt exits 0 too. Absent on other commands and on help, and
-	// when the command stopped before the login pipeline started. Eligible on
-	// every outcome.
+	// LoginStage is the last step of the login pipeline `gcx signup` entered,
+	// clamped to the vocabulary in loginstage.go. "complete" means the
+	// connection was saved. Absent on other commands, gcx login included, and
+	// when signup stopped before the pipeline started. Eligible on every
+	// outcome.
 	LoginStage string `json:"login_stage,omitempty"`
 
 	// Sanitized `gcx api` passthrough detail, set only for the api command.

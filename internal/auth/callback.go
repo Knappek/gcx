@@ -264,11 +264,12 @@ func awaitCallbackOrPaste[T any](
 // diverging on the state check, the PKCE exchange, or endpoint validation.
 func handleCallbackParams(ctx context.Context, q url.Values, expectedState, codeVerifier string, guard *exchangeGuard) (*Result, *callbackError) {
 	// The login stage moves to "callback" only for a callback that ends this
-	// login's wait: its Cancel, or a code about to be exchanged. A foreign or
-	// incomplete callback leaves the login waiting, so it records nothing.
+	// login's wait: a Cancel or another error the browser reported, or a code
+	// about to be exchanged. A foreign or incomplete callback leaves the login
+	// waiting, so it records nothing.
 	code, cerr := checkCallbackBasics(q, expectedState)
 	if cerr != nil {
-		if errors.Is(cerr.err, ErrBrowserCancelled) {
+		if !cerr.retryable && !errors.Is(cerr.err, errStateMismatch) {
 			capture.SetLoginStage("callback")
 		}
 		return nil, cerr

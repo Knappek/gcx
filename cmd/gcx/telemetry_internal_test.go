@@ -521,31 +521,30 @@ func TestBuildUsageEventKeepsGrafanaAuthMethodOnEveryOutcome(t *testing.T) {
 	}
 }
 
-// login_stage belongs to login and signup alone: a stage captured by some
-// other invocation must not travel, and help never ran the pipeline. Unlike
-// the failure-depth fields it survives a cancellation, which is where the
+// login_stage belongs to signup alone: gcx login runs the same probes but
+// does not report them, and no other command may carry a stage. Unlike the
+// failure-depth fields it survives a cancellation, which is where the
 // unfinished signups it exists to explain end.
-func TestBuildUsageEventReportsLoginStageForLoginCommandsOnly(t *testing.T) {
-	for _, command := range []string{"login", "signup"} {
-		for _, exitCode := range []int{gcxerrors.ExitSuccess, gcxerrors.ExitGeneralError, gcxerrors.ExitCancelled} {
-			isolate(t)
-			capture.SetLoginStage("browser")
+func TestBuildUsageEventReportsLoginStageForSignupOnly(t *testing.T) {
+	signup := &root.TelemetryInfo{Command: "signup"}
+	for _, exitCode := range []int{gcxerrors.ExitSuccess, gcxerrors.ExitGeneralError, gcxerrors.ExitCancelled} {
+		isolate(t)
+		capture.SetLoginStage("browser")
 
-			event := buildUsageEvent(&root.TelemetryInfo{Command: command}, time.Now(), exitCode)
-			assert.Equal(t, "browser", event.LoginStage, "%s must report its stage on exit code %d", command, exitCode)
-		}
+		event := buildUsageEvent(signup, time.Now(), exitCode)
+		assert.Equal(t, "browser", event.LoginStage, "signup must report its stage on exit code %d", exitCode)
 	}
 
 	isolate(t)
 	capture.SetLoginStage("state=abc123&code=xyz")
-	event := buildUsageEvent(&root.TelemetryInfo{Command: "signup"}, time.Now(), 1)
+	event := buildUsageEvent(signup, time.Now(), 1)
 	assert.Equal(t, telemetry.LoginStageUnknown, event.LoginStage, "an arbitrary captured string must be clamped")
 
-	for _, info := range []*root.TelemetryInfo{pushInfo(), {Command: "cloud login"}, {Command: "login", Help: true}} {
+	for _, info := range []*root.TelemetryInfo{{Command: "login"}, {Command: "cloud login"}, pushInfo()} {
 		isolate(t)
 		capture.SetLoginStage("complete")
 		fields := marshalEvent(t, buildUsageEvent(info, time.Now(), 0))
-		assert.NotContains(t, fields, "login_stage", "%q (help=%v) must omit the login stage", info.Command, info.Help)
+		assert.NotContains(t, fields, "login_stage", "%q must omit the login stage", info.Command)
 	}
 }
 

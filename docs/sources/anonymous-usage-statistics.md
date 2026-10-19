@@ -20,7 +20,7 @@ The one place an argument value is used at all is the `api` command, where the r
 
 For the resource commands that operate on batches, the size of the operation is sent as one of seven fixed categories rather than as a number. Two of those categories, `0` and `1`, cover a single value each, so those two sizes are exact; every larger category is a range. See [How to read the batch fields](#how-to-read-the-batch-fields).
 
-Further fields describe how the command ran rather than naming a flag: `output_format` records the output format used, from a fixed list of known formats; `dry_run` records whether the operation executed in dry-run mode; `grafana_auth_method` records the authentication category selected for the Grafana connection, from a fixed vocabulary and never the credential itself; and `login_stage` records the last step `gcx login` or `gcx signup` reached, also from a fixed vocabulary. `output_format` is read from `--output`, which means a command that renders JSON because you passed `--json` is still recorded with `--output`'s value; that mismatch is a known bug rather than intended behaviour. `dry_run` is derived from the operation and is set even for commands that have no `--dry-run` flag; `grafana_auth_method` is described in [Failure and authentication fields](#failure-and-authentication-fields), and `login_stage` in [Login fields](#login-fields). Some server-side enrichment is also performed on the usage statistics exported - see [Server-side enrichment](#server-side-enrichment) for details.
+Further fields describe how the command ran rather than naming a flag: `output_format` records the output format used, from a fixed list of known formats; `dry_run` records whether the operation executed in dry-run mode; `grafana_auth_method` records the authentication category selected for the Grafana connection, from a fixed vocabulary and never the credential itself; and `login_stage` records the last step `gcx signup` reached, also from a fixed vocabulary. `output_format` is read from `--output`, which means a command that renders JSON because you passed `--json` is still recorded with `--output`'s value; that mismatch is a known bug rather than intended behaviour. `dry_run` is derived from the operation and is set even for commands that have no `--dry-run` flag; `grafana_auth_method` is described in [Failure and authentication fields](#failure-and-authentication-fields), and `login_stage` in [Signup fields](#signup-fields). Some server-side enrichment is also performed on the usage statistics exported - see [Server-side enrichment](#server-side-enrichment) for details.
 
 {{< admonition type="note" >}} Usage statistics reporting is **enabled by default**. See the [Opt out](#opt-out) section below for guidance on how to turn off usage reporting.{{< /admonition >}}
 
@@ -120,9 +120,9 @@ These fields are easy to misread, so the following constraints are part of the c
 - **`grafana_auth_method` describes Grafana connection authentication only**, never Grafana Cloud/GCOM authentication. Absent means the invocation never resolved a Grafana connection, or that it resolved several different methods (`gcx config check` examines every context, so it reports no single method when they differ). `anonymous` means a valid selection with no credential material — requests went out unauthenticated. `unknown` means the configured method could not be classified. A selected method whose credential is invalid or rejected reports the method: which authentication category fails is precisely what this field exists to show.
 - **`grafana_auth_method` is present on every outcome** — success, failure, partial failure, and cancellation — whenever the invocation resolved a Grafana connection. It follows that resolution rather than the configuration, so here too absence proves nothing: a command that never builds a Grafana connection, as Grafana Cloud–only commands do not, reports no method even under a fully configured context. `gcx login` reports the method it actually resolved by probing, even when the login fails after authentication was resolved.
 
-### Login fields
+### Signup fields
 
-`gcx login` and `gcx signup` record the last step of the login they reached, so an unfinished login can be told apart from a saved one. Other commands and help omit the field.
+`gcx signup` records the last step of its login it reached, so an unfinished signup can be told apart from a saved one. Other commands, `gcx login` included, omit the field.
 
 | Field | Description | Example |
 | :---- | :---- | :---- |
@@ -133,7 +133,7 @@ The steps, in order:
 - `preflight`: checking the flags, the config, and the destination.
 - `credentials`: checking that OAuth credentials can be stored, before the browser opens.
 - `browser`: waiting for the browser login. This covers everything a person does in the browser, such as creating an account, choosing a stack, or approving access, and gcx cannot tell those pages apart.
-- `callback`: the browser came back to gcx with this login's result, either a Cancel from the consent page or an approval whose token gcx then exchanges.
+- `callback`: the browser came back to gcx with this login's result: an approval whose token gcx then exchanges, a Cancel from the consent page, or another error the browser reported.
 - `validate`: credentials were obtained and gcx is checking the connection.
 - `persist`: gcx is saving the connection.
 - `complete`: the connection was saved. A later failure to print the result does not undo it.
@@ -141,9 +141,8 @@ The steps, in order:
 
 These constraints are part of the contract:
 
-- **Only `complete` means a connection was saved.** A login abandoned at an interactive prompt exits with code `0` and reports `ok`, so count saved connections by `login_stage`, not by `outcome`.
 - **`canceled` at `callback` is almost always the consent page's Cancel.** An interrupt while waiting for the browser reports `browser`. The exception is an interrupt during the token exchange itself, which is normally brief.
-- **Absence means the login pipeline never started**, for example because the arguments were invalid, or that the event came from a version without this field.
+- **Absence means signup never started its login**, for example because the arguments were invalid, or that the event came from a version without this field.
 
 ### Parse-failure fields
 

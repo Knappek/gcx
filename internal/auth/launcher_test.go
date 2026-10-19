@@ -833,6 +833,8 @@ func TestCallbackServerKeepsWaitingAfterAnIncompleteCallback(t *testing.T) {
 
 func TestCallbackServerEndsOnProviderErrorAfterAnIncompleteCallback(t *testing.T) {
 	localSessionForTest(t)
+	capture.Reset()
+	t.Cleanup(capture.Reset)
 	browser := recordBrowser(t)
 
 	var out syncBuffer
@@ -847,12 +849,15 @@ func TestCallbackServerEndsOnProviderErrorAfterAnIncompleteCallback(t *testing.T
 	status, _ := sendCallback(t, http.MethodGet, callbackURL(port, url.Values{"state": {state}}))
 	assert.Equal(t, http.StatusBadRequest, status)
 	assertStillWaiting(t, done)
+	assert.Empty(t, capture.CurrentLoginStage(), "an incomplete callback leaves the login waiting")
 
 	status, _ = sendCallback(t, http.MethodGet, callbackURL(port, url.Values{"state": {state}, "error": {"access_denied"}}))
 	assert.Equal(t, http.StatusBadRequest, status)
 	outcome := waitForOutcome(t, done)
 	require.Error(t, outcome.err)
 	assert.Contains(t, outcome.err.Error(), "access_denied")
+	assert.Equal(t, "callback", capture.CurrentLoginStage(),
+		"the browser came back with this login's answer, unlike a person who never returned")
 }
 
 // TestGCOMCallbackServerKeepsWaitingAfterACallbackWithoutACode is the
