@@ -163,7 +163,7 @@ func TestSessionsGetReplayWritesYAMLEvents(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/rec-1/manifest"):
 			_, _ = w.Write([]byte(`{"id":"rec-1","session_id":"sess-1","segments":[{"id":0}]}`))
 		case strings.HasSuffix(r.URL.Path, "/rec-1/segments/0"):
-			_, _ = w.Write([]byte(`{"id":"0","recording_id":"rec-1","events":[{"type":4,"timestamp":1000,"data":{"href":"/replay"}}]}`))
+			_, _ = w.Write([]byte(`{"id":"0","recording_id":"rec-1","events":[{"type":4,"timestamp":1000,"data":{"href":"/?a=1&b=<x>"}}]}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -177,6 +177,7 @@ func TestSessionsGetReplayWritesYAMLEvents(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
+	assert.Contains(t, string(data), `"href":"/?a=1&b=<x>"`)
 	var bundle struct {
 		AppID      string `json:"app_id"`
 		SessionID  string `json:"session_id"`
@@ -191,7 +192,7 @@ func TestSessionsGetReplayWritesYAMLEvents(t *testing.T) {
 	require.Len(t, bundle.Recordings, 1)
 	assert.Equal(t, "rec-1", bundle.Recordings[0].ID)
 	require.Len(t, bundle.Recordings[0].Events, 1)
-	assert.JSONEq(t, `{"type":4,"timestamp":1000,"data":{"href":"/replay"}}`, string(bundle.Recordings[0].Events[0]))
+	assert.JSONEq(t, `{"type":4,"timestamp":1000,"data":{"href":"/?a=1&b=<x>"}}`, string(bundle.Recordings[0].Events[0]))
 }
 
 func TestSessionsGetReplayFetchesBoundedSegmentsInManifestOrder(t *testing.T) {

@@ -171,6 +171,8 @@ func newListReplaySessionsCommand(loader *providers.ConfigLoader) *cobra.Command
 					rows, meta, err = queryLokiReplaySessions(ctx, cfg, opts.Datasource, appID, start, end, opts.Limit)
 				case datasourcePinot:
 					rows, meta, err = queryPinotReplaySessions(ctx, cfg, opts.Datasource, appID, start, end, opts.Limit)
+				default:
+					return fmt.Errorf("unsupported replay session datasource kind %q", kind)
 				}
 			}
 			if err != nil {
@@ -198,7 +200,7 @@ func queryLokiReplaySessions(ctx context.Context, cfg config.NamespacedRESTConfi
 		return nil, nil, fmt.Errorf("creating Loki client: %w", err)
 	}
 	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
-	stop := func(*loki.QueryResponse) bool {
+	stop := func() bool {
 		return limit > 0 && len(accumulator.sessions) > limit
 	}
 	_, stopped, err := fetchLokiEventPagesUntil(ctx, client, uid, lokiReplayDiscoveryQuery(appID), start, end, sessionLokiQueryTimeout, stop, true, accumulator.addPage)
@@ -251,7 +253,7 @@ func fetchPinotReplaySessions(ctx context.Context, client pinotQuerier, uid, app
 			return nil, nil, err
 		}
 		if len(page) == 0 && resp != nil && len(resp.Rows) == pageSize {
-			return nil, nil, fmt.Errorf("pinot replay sessions page %d repeated without new sessions", pageNum+1)
+			return nil, nil, fmt.Errorf("pinot replay sessions page %d contained no usable sessions; pagination may have repeated without new sessions", pageNum+1)
 		}
 		rows = append(rows, page...)
 		if resp == nil || len(resp.Rows) < pageSize {

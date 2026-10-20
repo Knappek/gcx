@@ -245,12 +245,17 @@ func writeReplayEvent(out io.Writer, encoder *json.Encoder, event RRWebEvent, ou
 	if _, err := io.WriteString(out, prefix); err != nil {
 		return err
 	}
-	data, err := json.Marshal(event)
-	if err != nil {
+	var data strings.Builder
+	yamlEncoder := json.NewEncoder(&data)
+	yamlEncoder.SetEscapeHTML(false)
+	if err := yamlEncoder.Encode(event); err != nil {
 		return fmt.Errorf("encoding replay event: %w", err)
 	}
-	_, err = out.Write(data)
-	return err
+	encoded := strings.TrimSuffix(data.String(), "\n")
+	if _, err := io.WriteString(out, encoded); err != nil {
+		return err
+	}
+	return nil
 }
 
 func writeReplayRecordingFooter(out io.Writer, outputFormat string, eventCount int) error {

@@ -63,7 +63,7 @@ func TestLokiReplayPagesStopAfterSessionLimit(t *testing.T) {
 	}
 	query := `{kind="event"}`
 	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
-	stop := func(*loki.QueryResponse) bool {
+	stop := func() bool {
 		return len(accumulator.sessions) > 50
 	}
 	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", query, time.UnixMilli(0), time.UnixMilli(2000000), sessionLokiQueryTimeout, stop, false, accumulator.addPage)
@@ -110,7 +110,7 @@ func (c *multiPageReplayLoki) Query(_ context.Context, _ string, req loki.QueryR
 func TestLokiReplayDiscoveryDrainsPastFormerPageCap(t *testing.T) {
 	client := &multiPageReplayLoki{}
 	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
-	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, func(*loki.QueryResponse) bool { return false }, true, accumulator.addPage)
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, func() bool { return false }, true, accumulator.addPage)
 	require.NoError(t, err)
 	assert.False(t, stopped)
 	assert.Equal(t, 102, client.dataPages)
@@ -129,7 +129,7 @@ func TestLokiReplayDiscoveryReportsObservedTotalAfterShortPage(t *testing.T) {
 		{Timestamp: lokiUnixNanoMS(3_000), Line: "session_id=sess-c"},
 	}
 	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
-	stop := func(*loki.QueryResponse) bool { return len(accumulator.sessions) > 2 }
+	stop := func() bool { return len(accumulator.sessions) > 2 }
 	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", `{kind="event"}`, time.UnixMilli(0), time.UnixMilli(10_000), sessionLokiQueryTimeout, stop, true, accumulator.addPage)
 	require.NoError(t, err)
 	assert.False(t, stopped, "a short page means the selected range was drained")
@@ -140,24 +140,6 @@ func TestLokiReplayDiscoveryReportsObservedTotalAfterShortPage(t *testing.T) {
 	assert.Equal(t, 3, *meta.Total)
 	meta = cmdio.AttachListMeta(meta, []string{"gcx", "frontend", "apps", "list-replay-sessions", "42"})
 	assert.Contains(t, meta.Continue, "--limit 0")
-}
-
-func TestLokiReplayPagerPassesOnlyNewPageToStopPredicate(t *testing.T) {
-	dataset := make([]loki.LogEntry, 0, 2*lokiEventsPageSize+1)
-	for i := 1; i <= 2*lokiEventsPageSize+1; i++ {
-		dataset = append(dataset, loki.LogEntry{
-			Timestamp: lokiUnixNanoMS(int64(i) * 1000),
-			Line:      fmt.Sprintf("session_id=sess-%d", i),
-		})
-	}
-	var pageSizes []int
-	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", `{kind="event"}`, time.UnixMilli(0), time.UnixMilli(3_000_000), sessionLokiQueryTimeout, func(page *loki.QueryResponse) bool {
-		pageSizes = append(pageSizes, lokiEntryCount(page))
-		return len(pageSizes) == 2
-	}, false, nil)
-	require.NoError(t, err)
-	assert.True(t, stopped)
-	assert.Equal(t, []int{lokiEventsPageSize, lokiEventsPageSize}, pageSizes)
 }
 
 func TestLokiReplayDiscoveryQueryTimesOut(t *testing.T) {
@@ -182,10 +164,10 @@ func (invalidTimestampLoki) Query(_ context.Context, _ string, _ loki.QueryReque
 
 func TestLokiReplayPagerPreservesExistingSessionDumpBehavior(t *testing.T) {
 	start, end := time.Unix(1, 0), time.Unix(2, 0)
-	resp, err := fetchLokiEventPages(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second)
+	resp, _, err := fetchLokiEventPagesUntil(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, nil, false, nil)
 	require.NoError(t, err)
 	assert.Equal(t, lokiEventsPageSize, lokiEntryCount(resp))
-	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, func(*loki.QueryResponse) bool { return false }, true, nil)
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, func() bool { return false }, true, nil)
 	require.ErrorContains(t, err, "no valid timestamp")
 	assert.Nil(t, resp)
 	assert.False(t, stopped)

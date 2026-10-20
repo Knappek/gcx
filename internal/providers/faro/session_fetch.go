@@ -323,7 +323,7 @@ func fetchLokiEventsByKind(ctx context.Context, client lokiQuerier, uid string, 
 	results := make([]*loki.QueryResponse, len(kinds))
 	for i, kind := range kinds {
 		g.Go(func() error {
-			resp, err := fetchLokiEventPages(gctx, client, uid, lokiEventsQueryForKind(p, kind), start, end, timeout)
+			resp, _, err := fetchLokiEventPagesUntil(gctx, client, uid, lokiEventsQueryForKind(p, kind), start, end, timeout, nil, false, nil)
 			if err != nil {
 				return fmt.Errorf("loki %s query failed: %w", kind, err)
 			}
@@ -341,17 +341,12 @@ func fetchLokiEventsByKind(ctx context.Context, client lokiQuerier, uid string, 
 	return merged, nil
 }
 
-func fetchLokiEventPages(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration) (*loki.QueryResponse, error) {
-	resp, _, err := fetchLokiEventPagesUntil(ctx, client, uid, query, start, end, timeout, nil, false, nil)
-	return resp, err
-}
-
 // fetchLokiEventPagesUntil scans backward through the requested time range,
 // optionally stopping when stop reports that the caller has enough results.
 // stop is checked only for full pages; a short page proves the range is drained.
-// strictTimestamps makes a full page without a usable timestamp an error;
-// legacy session dumps retain their previous partial-result behavior.
-func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration, stop func(*loki.QueryResponse) bool, strictTimestamps bool, reduce func(*loki.QueryResponse)) (*loki.QueryResponse, bool, error) {
+// strictTimestamps makes a full page without a usable timestamp an error.
+// Event exports retain their previous partial-result behavior in that case.
+func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration, stop func() bool, strictTimestamps bool, reduce func(*loki.QueryResponse)) (*loki.QueryResponse, bool, error) {
 	// Discovery supplies reduce and retains only its summary. Event exports
 	// omit reduce and keep the merged stream.
 	var merged *loki.QueryResponse
@@ -384,7 +379,7 @@ func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, quer
 				consumeLokiPage(merged, page, reduce)
 				break
 			}
-			return nil, false, errors.New("loki events: full page has no valid timestamp for pagination")
+			return nil, false, errors.New("loki events: full page has no valid timestamp; result may be truncated")
 		}
 		// Refetch the earliest instant so leftover rows that share that
 		// timestamp are kept. Stepping End back 1ms would drop them.
@@ -399,10 +394,10 @@ func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, quer
 		}
 		appendLokiEventsUnseen(page, bucket, seen)
 		if lokiEntryCount(bucket) >= lokiEventsPageSize {
-			return nil, false, fmt.Errorf("loki events: more than %d rows share timestamp %s; dump would be truncated", lokiEventsPageSize, earliest.UTC().Format(time.RFC3339Nano))
+			return nil, false, fmt.Errorf("loki events: more than %d rows share timestamp %s; result would be truncated", lokiEventsPageSize, earliest.UTC().Format(time.RFC3339Nano))
 		}
 		consumeLokiPage(merged, page, reduce)
-		if stop != nil && stop(page) {
+		if stop != nil && stop() {
 			return merged, true, nil
 		}
 		if !earliest.Before(cursor) {
