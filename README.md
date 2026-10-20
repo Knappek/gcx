@@ -507,16 +507,6 @@ Grafana can reject an attempt to make an existing provisioned contact point edit
 gcx alert contact-points create -f contact-point.yaml --allow-ui-updates=false
 ```
 
-#### TBC 
-
-Unnamed native time interval and template group manifests can share a push directory: distinct titles remain separate, and template kind is part of the identity. 
-
-To delete these resources, use the dedicated `alert time-intervals delete` or `alert template-groups delete` commands, or pass pulled files with real API names to `resources delete -p`; unnamed files are rejected before any request for that file. 
-
-Pull includes read-only native intervals and template groups by default for backup, audit, and diffing; `--skip-read-only` excludes them with a reason in the summary. 
-
-Push and delete always skip them. Read commands still show them; `resources edit` refuses them before opening an editor. Provisioning export remains under `gcx alert mute-timings export` and covers Grafana-managed intervals only. Refer to the [server-derived resource names](docs/architecture/resource-model.md#server-derived-native-names) for portable push behavior.
-
 ### Mobile Frontend Observability apps
 
 Mobile Frontend Observability app manifests set `spec.appType: mobile` and a mobile
@@ -526,7 +516,7 @@ for the runtimes and an example manifest, and
 
 ### Manage Assistant Watchers (experimental)
 
-Read Watcher configuration with `gcx assistant watchers list` and `get WATCHER`, inspect runtime observations with `status WATCHER`, or export manifests with `gcx resources pull watchers`. Apply configuration with `create -f FILE`, `update WATCHER -f FILE` or `gcx resources push`; remove a Watcher with `delete WATCHER --force`. Creation stays inactive and uncalibrated. Requires Grafana Cloud. See [Assistant Watchers](docs/reference/assistant-watchers.md).
+Read Watcher configuration with `gcx assistant watchers list` and `get WATCHER`, inspect runtime observations with `status WATCHER`, or export manifests with `gcx resources pull watchers`. Apply configuration with `create -f FILE`, `update WATCHER -f FILE` or `gcx resources push`; remove a Watcher with `delete WATCHER --force`. Creation stays inactive and uncalibrated. Requires Grafana Cloud. See [Assistant Watchers](/docs/reference/assistant-watchers).
 
 Pulled Watcher manifests can be pushed back unchanged. Applying configuration preserves calibrated content and learned state; meaningful settings outside the manifest model cause an explicit refusal.
 
@@ -534,11 +524,20 @@ Pulled Watcher manifests can be pushed back unchanged. Applying configuration pr
 
 For anything not covered by built-in commands, use the API passthrough:
 
+For example, to work with dashboards:
+
 ```bash
-gcx api /api/health
-gcx api /api/datasources -o yaml
-gcx api /api/dashboards/db -d @dashboard.json
-gcx api /api/dashboards/uid/my-dashboard -X DELETE
+# Review who can access a dashboard
+gcx api /api/dashboards/uid/my-dashboard/permissions -o yaml
+
+# Star a dashboard for the current user
+gcx api /api/user/stars/dashboard/uid/my-dashboard -X POST
+
+# Version history: list versions
+gcx api /api/dashboards/uid/my-dashboard/versions -o yaml
+
+# Compare two dashboard JSONs before pushing
+gcx api /api/dashboards/calculate-diff -X POST -d @diff-request.json
 ```
 
 ## Usage statistics
