@@ -29,7 +29,7 @@ gcx signup
 
 `gcx` opens the Grafana Cloud sign-up page. After you create the account, verify your email, create your first stack, and approve "Connect gcx", the browser returns to gcx, which saves the connection. 
 
-If you already have an account but no stack URL at hand, run `gcx login` and leave the server empty, or `gcx login --cloud --oauth` from a script or agent. See [First-time Grafana Cloud login](../reference/login#first-time-grafana-cloud-login).
+If you already have an account but no stack URL at hand, run `gcx login` and leave the server empty, or `gcx login --cloud --oauth` from a script or agent. See [First-time Grafana Cloud login](/reference/login#first-time-grafana-cloud-login).
 
 ## Browser-based OAuth (Cloud-only, recommended)
 
@@ -48,7 +48,7 @@ This flow:
 1. Refreshes the token and proxy endpoint to the `my-stack` context's named stack entry and makes the context current. 
 1. `gcx` stops before the browser flow when the current process cannot write to the OS credential store. 
 
-Note that agent users must approve the same command outside the sandbox. Refer to [Keychain credential storage](./keychain).
+Note that agent users must approve the same command outside the sandbox. Refer to [Keychain credential storage](/keychain).
 
 ### Required role for OAuth sign-in
 
