@@ -96,10 +96,8 @@ be checked again later.
 it is a wrapper like `{"items": [...]}`, which is the shape JSON output has to
 keep. The table wants the rows; JSON wants the wrapper.
 
-A `Rows func(any) ([]T, error)` field on `Table` was initially rejected in
-favour of command-level format dispatch, with a commitment to revisit when
-multiple packages needed it. Wrapper and singleton payloads now recur across
-providers, so a separate `output.TableAdapter[P, T]` handles this boundary:
+A separate `output.TableAdapter[P, T]` adapts wrapper and singleton payloads
+to table rows:
 
 ```go
 table := output.TableAdapter[Result, Item]{
