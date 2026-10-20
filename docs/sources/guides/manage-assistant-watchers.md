@@ -1,6 +1,6 @@
 ---
 title: Manage Assistant Watchers
-description: Use gcx to create Assistant Watchers, follow calibration, review and update configuration, save reusable manifests, control monitoring, inspect run history, restore definition versions, and delete Watchers in Grafana Cloud.
+description: Use gcx to create Assistant Watchers, follow calibration, review and update configuration, configure notifications, save reusable manifests, control monitoring, inspect run history, restore definition versions, and delete Watchers in Grafana Cloud.
 labels:
   products:
     - cloud
@@ -90,6 +90,8 @@ If an apply reports a partial failure, changes may already be saved. Inspect the
 
 Use `status` for calibration, checks, and runtime observations; `get` exports configuration only. A paused Watcher can retain an older health assessment.
 
+Use Grafana for custom automatic-recalibration schedules and other settings gcx cannot represent. gcx refuses configuration writes that would drop those settings.
+
 ## Manage configuration files
 
 To store and reapply Watcher configuration, follow these steps:
@@ -113,6 +115,33 @@ To store and reapply Watcher configuration, follow these steps:
    ```
 
 An unchanged apply sends no mutation unless you supply secret values. Push saves configuration only; calibrate new definitions in Grafana. Dry-run checks the manifest locally, so permissions, data source access, and other server checks still apply when you push.
+
+## Configure Slack and Alerting notifications
+
+To select a Slack recipient and an Alerting notification policy tree, follow these steps:
+
+1. Add the following under `spec` in your complete Watcher manifest. Replace the example IDs and policy tree with your destination values:
+
+   ```yaml
+   notifications:
+     slack:
+       enabled: true
+       targetType: dm
+       userId: U_EXAMPLE
+       teamId: T_EXAMPLE
+       severity: critical
+     alerting:
+       enabled: true
+       severity: critical
+       routingTree: example-policy-tree
+   ```
+
+   For a Slack channel, use `targetType: channel` and `channelId` instead of `userId`. `teamId` is optional. Enabled channels require a nonblank channel ID; direct messages require a nonblank user ID even when disabled.
+
+1. Apply the complete manifest with `gcx assistant watchers update WATCHER -f watcher.yaml`.
+1. Verify the saved destinations with `gcx assistant watchers get WATCHER -o yaml`.
+
+Notification severity defaults to `warning-and-critical`. Set `routingTree: ""` to use the default notification policy tree. Manage notification policy trees and contact points in Grafana Alerting.
 
 ## Supply webhook secrets
 
