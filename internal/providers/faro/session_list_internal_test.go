@@ -65,7 +65,7 @@ func TestLokiReplayPagesStopAfterSessionLimit(t *testing.T) {
 	stop := func(page *loki.QueryResponse) bool {
 		return len(extractReplaySessionRows(page)) > 50
 	}
-	page, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", query, time.UnixMilli(0), time.UnixMilli(2000000), sessionLokiQueryTimeout, stop, false)
+	page, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", query, time.UnixMilli(0), time.UnixMilli(2000000), sessionLokiQueryTimeout, stop, false, nil)
 	require.NoError(t, err)
 	assert.True(t, stopped)
 	assert.Greater(t, len(extractReplaySessionRows(page)), 50)
@@ -107,13 +107,14 @@ func (c *multiPageReplayLoki) Query(_ context.Context, _ string, req loki.QueryR
 
 func TestLokiReplayDiscoveryDrainsPastFormerPageCap(t *testing.T) {
 	client := &multiPageReplayLoki{}
-	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, replaySessionLimitStop(0), true)
+	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, replaySessionLimitStop(0), true, accumulator.addPage)
 	require.NoError(t, err)
 	assert.False(t, stopped)
 	assert.Equal(t, 102, client.dataPages)
 	assert.Equal(t, 203, client.queries) // 101 data pages plus boundary checks and one short final page
-	assert.Equal(t, 101*lokiEventsPageSize+1, lokiEntryCount(resp))
-	rows := extractReplaySessionRows(resp)
+	assert.Nil(t, resp, "discovery reduces each page instead of retaining every event")
+	rows := accumulator.rows()
 	assert.Len(t, rows, 2)
 	_, meta := cmdio.TruncateCompleteList(rows, 0)
 	assert.Nil(t, meta, "a fully drained time range is a complete result")
@@ -131,7 +132,7 @@ func TestLokiReplayPagerPassesOnlyNewPageToStopPredicate(t *testing.T) {
 	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", `{kind="event"}`, time.UnixMilli(0), time.UnixMilli(3_000_000), sessionLokiQueryTimeout, func(page *loki.QueryResponse) bool {
 		pageSizes = append(pageSizes, lokiEntryCount(page))
 		return len(pageSizes) == 2
-	}, false)
+	}, false, nil)
 	require.NoError(t, err)
 	assert.True(t, stopped)
 	assert.Equal(t, []int{lokiEventsPageSize, lokiEventsPageSize}, pageSizes)
@@ -151,7 +152,7 @@ func TestReplaySessionLimitStopCountsDistinctSessionsAcrossPages(t *testing.T) {
 }
 
 func TestLokiReplayDiscoveryQueryTimesOut(t *testing.T) {
-	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), hangLoki{}, "uid", `{kind="event"}`, time.Unix(1, 0), time.Unix(2, 0), 20*time.Millisecond, nil, false)
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), hangLoki{}, "uid", `{kind="event"}`, time.Unix(1, 0), time.Unix(2, 0), 20*time.Millisecond, nil, false, nil)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Nil(t, resp)
 	assert.False(t, stopped)
@@ -175,7 +176,7 @@ func TestLokiReplayPagerPreservesExistingSessionDumpBehavior(t *testing.T) {
 	resp, err := fetchLokiEventPages(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second)
 	require.NoError(t, err)
 	assert.Equal(t, lokiEventsPageSize, lokiEntryCount(resp))
-	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, func(*loki.QueryResponse) bool { return false }, true)
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, func(*loki.QueryResponse) bool { return false }, true, nil)
 	require.ErrorContains(t, err, "no valid timestamp")
 	assert.Nil(t, resp)
 	assert.False(t, stopped)
@@ -211,6 +212,7 @@ func TestExtractPinotReplaySessionRows(t *testing.T) {
 			{Name: "browser_version"}, {Name: "app_name"},
 		},
 		Rows: [][]any{
+			{"sess-bad", "not-a-timestamp", "Unknown", "", "web"},
 			{"sess-1", float64(1790340861602), "Chrome", "153", "web"},
 			{"sess-1", float64(1790340850000), "Chrome", "153", "web"},
 			{"sess-2", float64(1790340840000), "Firefox", "", "web"},

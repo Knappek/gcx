@@ -116,7 +116,7 @@ func newListReplaySessionsCommand(loader *providers.ConfigLoader) *cobra.Command
 	cmd := &cobra.Command{
 		Use:   "list-replay-sessions <slug-id-or-numeric-id>",
 		Short: "List Frontend Observability sessions that have replay recordings.",
-		Long:  "Discovers regular session IDs that have replay recordings by querying Loki or Pinot for faro.session_recording.started events. This does not list all Frontend Observability sessions. The default datasource is Loki; pass a Pinot datasource UID with -d to query Pinot. Loki applies a 60s timeout per query. An empty result means no replay-start event was found for the app ID and time window; this command does not verify that the app exists. JSON output has an items envelope and includes list_meta when more sessions are available.",
+		Long:  "Discovers regular session IDs that have replay recordings by querying Loki or Pinot for faro.session_recording.started events. This does not list all Frontend Observability sessions. Loki is auto-discovered when -d is omitted; pass a Loki or Pinot UID with -d to choose one. Loki applies a 60s timeout per query. An empty result means no replay-start event was found for the app ID and time window; this command does not verify that the app exists. JSON output has an items envelope and includes list_meta when more sessions are available.",
 		Example: `  # List regular session IDs with replay recordings in the last hour.
   gcx frontend apps list-replay-sessions my-web-app-42 --since 1h
 
@@ -197,11 +197,12 @@ func queryLokiReplaySessions(ctx context.Context, cfg config.NamespacedRESTConfi
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating Loki client: %w", err)
 	}
-	resp, stopped, err := fetchLokiEventPagesUntil(ctx, client, uid, lokiReplayDiscoveryQuery(appID), start, end, sessionLokiQueryTimeout, replaySessionLimitStop(limit), true)
+	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
+	_, stopped, err := fetchLokiEventPagesUntil(ctx, client, uid, lokiReplayDiscoveryQuery(appID), start, end, sessionLokiQueryTimeout, replaySessionLimitStop(limit), true, accumulator.addPage)
 	if err != nil {
 		return nil, nil, wrapLokiReplayDiscoveryErr(err)
 	}
-	rows := extractReplaySessionRows(resp)
+	rows := accumulator.rows()
 	if stopped {
 		page, meta := cmdio.TruncatePagedList(rows, limit)
 		return page, meta, nil
@@ -307,7 +308,7 @@ func extractPinotReplaySessionRows(resp *querysql.QueryResponse, seen map[string
 		}
 		lastSeen, ok := pinotInt64(row[columns["last_seen"]])
 		if !ok || lastSeen <= 0 {
-			return nil, fmt.Errorf("pinot replay session %s has invalid timestamp", sessionID)
+			continue
 		}
 		stringCell := func(name string) string {
 			value, _ := row[columns[name]].(string)
@@ -325,18 +326,19 @@ func extractPinotReplaySessionRows(resp *querysql.QueryResponse, seen map[string
 	return rows, nil
 }
 
-// extractReplaySessionRows parses Loki stream results into deduplicated replay session rows.
-// When a session appears multiple times, the most recent entry wins.
-// Results are sorted by last seen time (most recent first).
-func extractReplaySessionRows(resp *loki.QueryResponse) []replaySessionListRow {
-	type sessionInfo struct {
-		browser  string
-		appName  string
-		lastSeen time.Time
+type replaySessionInfo struct {
+	row      replaySessionListRow
+	lastSeen time.Time
+}
+
+type replaySessionAccumulator struct {
+	sessions map[string]replaySessionInfo
+}
+
+func (a *replaySessionAccumulator) addPage(resp *loki.QueryResponse) {
+	if resp == nil {
+		return
 	}
-
-	sessions := make(map[string]*sessionInfo)
-
 	for _, stream := range resp.Data.Result {
 		for _, entry := range stream.Values {
 			fields := parseLogfmt(entry.Line)
@@ -344,7 +346,6 @@ func extractReplaySessionRows(resp *loki.QueryResponse) []replaySessionListRow {
 			if sid == "" {
 				continue
 			}
-
 			ts, valid := parseLokiUnixNano(entry.Timestamp)
 			if !valid {
 				continue
@@ -353,35 +354,27 @@ func extractReplaySessionRows(resp *loki.QueryResponse) []replaySessionListRow {
 			if v := fields["browser_version"]; v != "" {
 				browser = strings.TrimSpace(browser + " " + v)
 			}
-
-			existing, ok := sessions[sid]
-			if !ok || ts.After(existing.lastSeen) {
-				sessions[sid] = &sessionInfo{
-					browser:  browser,
-					appName:  fields["app_name"],
-					lastSeen: ts,
-				}
+			if existing, ok := a.sessions[sid]; ok && !ts.After(existing.lastSeen) {
+				continue
+			}
+			a.sessions[sid] = replaySessionInfo{
+				row: replaySessionListRow{
+					SessionID: sid,
+					Browser:   browser,
+					AppName:   fields["app_name"],
+					LastSeen:  ts.UTC().Format(time.RFC3339),
+				},
+				lastSeen: ts,
 			}
 		}
 	}
+}
 
-	type timedRow struct {
-		row      replaySessionListRow
-		lastSeen time.Time
+func (a *replaySessionAccumulator) rows() []replaySessionListRow {
+	ordered := make([]replaySessionInfo, 0, len(a.sessions))
+	for _, info := range a.sessions {
+		ordered = append(ordered, info)
 	}
-	ordered := make([]timedRow, 0, len(sessions))
-	for sid, info := range sessions {
-		ordered = append(ordered, timedRow{
-			row: replaySessionListRow{
-				SessionID: sid,
-				Browser:   info.browser,
-				AppName:   info.appName,
-				LastSeen:  info.lastSeen.UTC().Format(time.RFC3339),
-			},
-			lastSeen: info.lastSeen,
-		})
-	}
-
 	sort.Slice(ordered, func(i, j int) bool {
 		if !ordered[i].lastSeen.Equal(ordered[j].lastSeen) {
 			return ordered[i].lastSeen.After(ordered[j].lastSeen)
@@ -393,4 +386,13 @@ func extractReplaySessionRows(resp *loki.QueryResponse) []replaySessionListRow {
 		rows[i] = ordered[i].row
 	}
 	return rows
+}
+
+// extractReplaySessionRows parses Loki stream results into deduplicated replay session rows.
+// When a session appears multiple times, the most recent entry wins.
+// Results are sorted by last seen time (most recent first).
+func extractReplaySessionRows(resp *loki.QueryResponse) []replaySessionListRow {
+	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
+	accumulator.addPage(resp)
+	return accumulator.rows()
 }

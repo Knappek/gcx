@@ -2,6 +2,7 @@ package faro
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -341,7 +342,7 @@ func fetchLokiEventsByKind(ctx context.Context, client lokiQuerier, uid string, 
 }
 
 func fetchLokiEventPages(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration) (*loki.QueryResponse, error) {
-	resp, _, err := fetchLokiEventPagesUntil(ctx, client, uid, query, start, end, timeout, nil, false)
+	resp, _, err := fetchLokiEventPagesUntil(ctx, client, uid, query, start, end, timeout, nil, false, nil)
 	return resp, err
 }
 
@@ -349,9 +350,9 @@ func fetchLokiEventPages(ctx context.Context, client lokiQuerier, uid, query str
 // optionally stopping when stop reports that the caller has enough results.
 // strictTimestamps makes a full page without a usable timestamp an error;
 // legacy session dumps retain their previous partial-result behavior.
-func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration, stop func(*loki.QueryResponse) bool, strictTimestamps bool) (*loki.QueryResponse, bool, error) {
+func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration, stop func(*loki.QueryResponse) bool, strictTimestamps bool, reduce func(*loki.QueryResponse)) (*loki.QueryResponse, bool, error) {
 	merged := &loki.QueryResponse{Data: loki.QueryResultData{ResultType: "streams"}}
-	seen := make(map[string]struct{})
+	seen := make(map[[sha256.Size]byte]struct{})
 	cursor := end
 	for cursor.After(start) {
 		resp, err := queryLoki(ctx, client, uid, loki.QueryRequest{
@@ -368,13 +369,16 @@ func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, quer
 		appendLokiEvents(page, resp)
 		recordLokiFingerprints(resp, seen)
 		if n < lokiEventsPageSize {
-			appendLokiEvents(merged, page)
+			consumeLokiPage(merged, page, reduce)
+			if stop != nil && stop(page) {
+				return mergedLokiPages(merged, reduce), true, nil
+			}
 			break
 		}
 		earliest, ok := minLokiTime(resp)
 		if !ok {
 			if !strictTimestamps {
-				appendLokiEvents(merged, page)
+				consumeLokiPage(merged, page, reduce)
 				break
 			}
 			return nil, false, errors.New("loki events: full page has no valid timestamp for pagination")
@@ -394,16 +398,31 @@ func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, quer
 		if lokiEntryCount(bucket) >= lokiEventsPageSize {
 			return nil, false, fmt.Errorf("loki events: more than %d rows share timestamp %s; dump would be truncated", lokiEventsPageSize, earliest.UTC().Format(time.RFC3339Nano))
 		}
-		appendLokiEvents(merged, page)
+		consumeLokiPage(merged, page, reduce)
 		if stop != nil && stop(page) {
-			return merged, true, nil
+			return mergedLokiPages(merged, reduce), true, nil
 		}
 		if !earliest.Before(cursor) {
 			break
 		}
 		cursor = earliest
 	}
-	return merged, false, nil
+	return mergedLokiPages(merged, reduce), false, nil
+}
+
+func mergedLokiPages(merged *loki.QueryResponse, reduce func(*loki.QueryResponse)) *loki.QueryResponse {
+	if reduce != nil {
+		return nil
+	}
+	return merged
+}
+
+func consumeLokiPage(merged, page *loki.QueryResponse, reduce func(*loki.QueryResponse)) {
+	if reduce != nil {
+		reduce(page)
+		return
+	}
+	appendLokiEvents(merged, page)
 }
 
 func appendLokiEvents(dst, src *loki.QueryResponse) {
@@ -413,11 +432,17 @@ func appendLokiEvents(dst, src *loki.QueryResponse) {
 	dst.Data.Result = append(dst.Data.Result, src.Data.Result...)
 }
 
-func lokiEntryFingerprint(e loki.LogEntry) string {
-	return e.Timestamp + "\x1e" + e.Line
+func lokiEntryFingerprint(e loki.LogEntry) [sha256.Size]byte {
+	h := sha256.New()
+	_, _ = h.Write([]byte(e.Timestamp))
+	_, _ = h.Write([]byte{0x1e})
+	_, _ = h.Write([]byte(e.Line))
+	var fingerprint [sha256.Size]byte
+	copy(fingerprint[:], h.Sum(nil))
+	return fingerprint
 }
 
-func recordLokiFingerprints(resp *loki.QueryResponse, seen map[string]struct{}) {
+func recordLokiFingerprints(resp *loki.QueryResponse, seen map[[sha256.Size]byte]struct{}) {
 	if resp == nil {
 		return
 	}
@@ -428,7 +453,7 @@ func recordLokiFingerprints(resp *loki.QueryResponse, seen map[string]struct{}) 
 	}
 }
 
-func appendLokiEventsUnseen(dst, src *loki.QueryResponse, seen map[string]struct{}) {
+func appendLokiEventsUnseen(dst, src *loki.QueryResponse, seen map[[sha256.Size]byte]struct{}) {
 	if src == nil {
 		return
 	}
