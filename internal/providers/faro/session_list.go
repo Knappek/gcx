@@ -208,13 +208,13 @@ func queryLokiReplaySessions(ctx context.Context, cfg config.NamespacedRESTConfi
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating Loki client: %w", err)
 	}
-	resp, stopped, capped, err := fetchLokiReplayDiscoveryPages(ctx, client, uid, lokiReplayDiscoveryQuery(appID), start, end, sessionLokiQueryTimeout, replaySessionLimitStop(limit))
+	resp, stopped, capped, err := fetchLokiEventPagesUntilWithPageCap(ctx, client, uid, lokiReplayDiscoveryQuery(appID), start, end, sessionLokiQueryTimeout, replaySessionLimitStop(limit), replayLokiDiscoveryMaxPages)
 	if err != nil {
 		return nil, nil, wrapLokiReplayDiscoveryErr(err)
 	}
 	rows := extractReplaySessionRows(resp)
 	if capped {
-		page, meta := rows, cmdio.PagedListMeta(len(rows), limit, true, replayLokiSessionsSafetyCap)
+		page, meta := rows, cmdio.PagedListMeta(len(rows), 0, true, replayLokiSessionsSafetyCap)
 		return page, meta, nil
 	}
 	if stopped {
@@ -223,10 +223,6 @@ func queryLokiReplaySessions(ctx context.Context, cfg config.NamespacedRESTConfi
 	}
 	page, meta := cmdio.TruncateCompleteList(rows, limit)
 	return page, meta, nil
-}
-
-func fetchLokiReplayDiscoveryPages(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration, stop func(*loki.QueryResponse) bool) (*loki.QueryResponse, bool, bool, error) {
-	return fetchLokiEventPagesUntilWithPageCap(ctx, client, uid, query, start, end, timeout, stop, replayLokiDiscoveryMaxPages)
 }
 
 func wrapLokiReplayDiscoveryErr(err error) error {
@@ -239,6 +235,9 @@ func wrapLokiReplayDiscoveryErr(err error) error {
 func replaySessionLimitStop(limit int) func(*loki.QueryResponse) bool {
 	seen := make(map[string]struct{})
 	return func(page *loki.QueryResponse) bool {
+		if limit <= 0 {
+			return false
+		}
 		for _, stream := range page.Data.Result {
 			for _, entry := range stream.Values {
 				if _, valid := parseLokiUnixNano(entry.Timestamp); !valid {

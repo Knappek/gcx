@@ -3,6 +3,7 @@ package faro_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -643,6 +644,29 @@ func TestListRecordingsAutoPaginationRejectsRepeatedCursor(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "repeated pagination cursor")
 	assert.Equal(t, 2, callCount)
+}
+
+func TestListRecordingsPaginationHasSafetyCap(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		assert.Equal(t, "50", r.URL.Query().Get("limit"))
+		writeJSON(w, faro.SessionRecordingsListResponse{
+			Items: []faro.RecordingListItem{{ID: "rec-1"}},
+			Page: faro.SessionPage{
+				HasNext: true,
+				Next:    fmt.Sprintf("cursor-%d", callCount),
+			},
+		})
+	}))
+	defer server.Close()
+
+	c := newTestClient(t, server)
+	items, err := c.ListRecordings(t.Context(), "app-42", "sess-abc")
+	require.Error(t, err)
+	assert.Nil(t, items, "an incomplete recording list must not be returned as complete")
+	assert.Contains(t, err.Error(), "safety cap")
+	assert.Equal(t, 100, callCount)
 }
 
 func TestGetManifest(t *testing.T) {

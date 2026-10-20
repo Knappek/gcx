@@ -37,6 +37,11 @@ const (
 	appsWriteRole    = "Frontend Observability Editor"
 	appsDeleteAction = "grafana-kowalski-app.apps:delete"
 	appsDeleteRole   = "Frontend Observability Admin"
+
+	recordingsReadAction = "grafana-sessionreplay-app.recordings:read"
+	recordingsReadRole   = "Recordings Viewer"
+
+	replayRecordingsMaxPages = 100
 )
 
 // routeDenied returns err as a PluginRouteDeniedError when the plugin proxy
@@ -249,7 +254,6 @@ func (c *Client) ListSourcemaps(ctx context.Context, appID string, limit int) ([
 
 	var allBundles []SourcemapBundle
 	nextPage := ""
-
 	for {
 		path := fmt.Sprintf(sourcemapsPathFmt, url.PathEscape(appID))
 
@@ -315,8 +319,9 @@ func (c *Client) ListRecordings(ctx context.Context, appID, sessionID string) ([
 	var allItems []RecordingListItem
 	nextPage := ""
 	seenPages := map[string]struct{}{}
+	hasNext := false
 
-	for {
+	for range replayRecordingsMaxPages {
 		path := fmt.Sprintf(recordingsPathFmt, url.PathEscape(sessionID))
 
 		q := url.Values{}
@@ -338,7 +343,8 @@ func (c *Client) ListRecordings(ctx context.Context, appID, sessionID string) ([
 		}
 
 		if statusCode >= 400 {
-			return nil, fmt.Errorf("faro: list recordings for session %s: status %d, body: %s", sessionID, statusCode, string(body))
+			err := fmt.Errorf("faro: list recordings for session %s: status %d, body: %s", sessionID, statusCode, string(body))
+			return nil, routeDenied(err, statusCode, body, recordingsReadAction, recordingsReadRole)
 		}
 
 		var page SessionRecordingsListResponse
@@ -348,13 +354,17 @@ func (c *Client) ListRecordings(ctx context.Context, appID, sessionID string) ([
 
 		allItems = append(allItems, page.Items...)
 
-		if !page.Page.HasNext {
+		hasNext = page.Page.HasNext
+		if !hasNext {
 			break
 		}
 		if page.Page.Next == "" {
 			return nil, fmt.Errorf("faro: list recordings for session %s: missing next pagination cursor", sessionID)
 		}
 		nextPage = page.Page.Next
+	}
+	if hasNext {
+		return nil, fmt.Errorf("faro: list recordings for session %s reached the %d-page safety cap with more pages available; recording list is incomplete", sessionID, replayRecordingsMaxPages)
 	}
 
 	log.Debug("Listed recordings", "app_id", appID, "session_id", sessionID, "count", len(allItems))
@@ -377,7 +387,8 @@ func (c *Client) GetManifest(ctx context.Context, appID, sessionID, recordingID 
 	}
 
 	if statusCode >= 400 {
-		return nil, fmt.Errorf("faro: get manifest for recording %s: status %d, body: %s", recordingID, statusCode, string(body))
+		err := fmt.Errorf("faro: get manifest for recording %s: status %d, body: %s", recordingID, statusCode, string(body))
+		return nil, routeDenied(err, statusCode, body, recordingsReadAction, recordingsReadRole)
 	}
 
 	var manifest RecordingManifestResponse
@@ -405,7 +416,8 @@ func (c *Client) GetSegment(ctx context.Context, appID, sessionID, recordingID, 
 	}
 
 	if statusCode >= 400 {
-		return nil, fmt.Errorf("faro: get segment %s for recording %s: status %d, body: %s", segmentID, recordingID, statusCode, string(body))
+		err := fmt.Errorf("faro: get segment %s for recording %s: status %d, body: %s", segmentID, recordingID, statusCode, string(body))
+		return nil, routeDenied(err, statusCode, body, recordingsReadAction, recordingsReadRole)
 	}
 
 	var segment RecordingSegmentResponse

@@ -341,15 +341,8 @@ func fetchLokiEventsByKind(ctx context.Context, client lokiQuerier, uid string, 
 }
 
 func fetchLokiEventPages(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration) (*loki.QueryResponse, error) {
-	resp, _, err := fetchLokiEventPagesUntil(ctx, client, uid, query, start, end, timeout, nil)
+	resp, _, _, err := fetchLokiEventPagesUntilWithPageCap(ctx, client, uid, query, start, end, timeout, nil, 0)
 	return resp, err
-}
-
-// fetchLokiEventPagesUntil walks complete timestamp buckets, stopping early
-// only when the caller has enough data. A nil stop function drains the range.
-func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration, stop func(*loki.QueryResponse) bool) (*loki.QueryResponse, bool, error) {
-	resp, stopped, _, err := fetchLokiEventPagesUntilWithPageCap(ctx, client, uid, query, start, end, timeout, stop, 0)
-	return resp, stopped, err
 }
 
 // fetchLokiEventPagesUntilWithPageCap optionally bounds the number of full

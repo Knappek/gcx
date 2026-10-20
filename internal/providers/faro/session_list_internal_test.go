@@ -65,7 +65,7 @@ func TestLokiReplayPagesStopAfterSessionLimit(t *testing.T) {
 	stop := func(page *loki.QueryResponse) bool {
 		return len(extractReplaySessionRows(page)) > 50
 	}
-	page, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", query, time.UnixMilli(0), time.UnixMilli(2000000), sessionLokiQueryTimeout, stop)
+	page, stopped, _, err := fetchLokiEventPagesUntilWithPageCap(t.Context(), &rangeLoki{dataset: dataset}, "uid", query, time.UnixMilli(0), time.UnixMilli(2000000), sessionLokiQueryTimeout, stop, 0)
 	require.NoError(t, err)
 	assert.True(t, stopped)
 	assert.Greater(t, len(extractReplaySessionRows(page)), 50)
@@ -81,29 +81,32 @@ type cappedReplayLoki struct{ queries int }
 func (c *cappedReplayLoki) Query(_ context.Context, _ string, req loki.QueryRequest) (*loki.QueryResponse, error) {
 	c.queries++
 	// The pager re-queries the earliest timestamp to preserve ties. Return just
-	// that boundary row; regular page requests get a full page with unique IDs.
+	// that boundary row; regular page requests get a full page with one session ID.
 	if req.End.Sub(req.Start) <= time.Millisecond {
 		return &loki.QueryResponse{Data: loki.QueryResultData{Result: []loki.StreamEntry{{Values: []loki.LogEntry{{
-			Timestamp: lokiUnixNanoMS(req.Start.UnixMilli()), Line: fmt.Sprintf("session_id=session-%d", req.Start.UnixMilli()),
+			Timestamp: lokiUnixNanoMS(req.Start.UnixMilli()), Line: "session_id=session-1",
 		}}}}}}, nil
 	}
 	entries := make([]loki.LogEntry, lokiEventsPageSize)
 	for i := range entries {
 		millis := req.End.Add(-time.Duration(i+1) * time.Second).UnixMilli()
-		entries[i] = loki.LogEntry{Timestamp: lokiUnixNanoMS(millis), Line: fmt.Sprintf("session_id=session-%d", millis)}
+		entries[i] = loki.LogEntry{Timestamp: lokiUnixNanoMS(millis), Line: "session_id=session-1"}
 	}
 	return &loki.QueryResponse{Data: loki.QueryResultData{Result: []loki.StreamEntry{{Values: entries}}}}, nil
 }
 
 func TestLokiReplayDiscoveryStopsAtSafetyCap(t *testing.T) {
 	client := &cappedReplayLoki{}
-	resp, stopped, capped, err := fetchLokiReplayDiscoveryPages(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, replaySessionLimitStop(0))
+	resp, stopped, capped, err := fetchLokiEventPagesUntilWithPageCap(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, replaySessionLimitStop(1000), replayLokiDiscoveryMaxPages)
 	require.NoError(t, err)
 	assert.False(t, stopped)
 	assert.True(t, capped)
 	assert.Equal(t, replayLokiDiscoveryMaxPages*2, client.queries) // data page plus boundary check
 	assert.Equal(t, replayLokiSessionsSafetyCap, lokiEntryCount(resp))
 	rows := extractReplaySessionRows(resp)
+	assert.Len(t, rows, 1, "the event safety cap may bind while the default session limit does not")
+	uncappedMeta := cmdio.PagedListMeta(len(rows), 1000, true, replayLokiSessionsSafetyCap)
+	assert.Zero(t, uncappedMeta.Cap, "PagedListMeta compares the supplied limit to the cap")
 	meta := cmdio.PagedListMeta(len(rows), 0, true, replayLokiSessionsSafetyCap)
 	require.NotNil(t, meta)
 	assert.True(t, meta.Truncated)
@@ -119,10 +122,10 @@ func TestLokiReplayPagerPassesOnlyNewPageToStopPredicate(t *testing.T) {
 		})
 	}
 	var pageSizes []int
-	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", `{kind="event"}`, time.UnixMilli(0), time.UnixMilli(3_000_000), sessionLokiQueryTimeout, func(page *loki.QueryResponse) bool {
+	_, stopped, _, err := fetchLokiEventPagesUntilWithPageCap(t.Context(), &rangeLoki{dataset: dataset}, "uid", `{kind="event"}`, time.UnixMilli(0), time.UnixMilli(3_000_000), sessionLokiQueryTimeout, func(page *loki.QueryResponse) bool {
 		pageSizes = append(pageSizes, lokiEntryCount(page))
 		return len(pageSizes) == 2
-	})
+	}, 0)
 	require.NoError(t, err)
 	assert.True(t, stopped)
 	assert.Equal(t, []int{lokiEventsPageSize, lokiEventsPageSize}, pageSizes)
@@ -142,8 +145,11 @@ func TestReplaySessionLimitStopCountsDistinctSessionsAcrossPages(t *testing.T) {
 }
 
 func TestLokiReplayDiscoveryQueryTimesOut(t *testing.T) {
-	_, _, err := fetchLokiEventPagesUntil(t.Context(), hangLoki{}, "uid", `{kind="event"}`, time.Unix(1, 0), time.Unix(2, 0), 20*time.Millisecond, nil)
+	resp, stopped, capped, err := fetchLokiEventPagesUntilWithPageCap(t.Context(), hangLoki{}, "uid", `{kind="event"}`, time.Unix(1, 0), time.Unix(2, 0), 20*time.Millisecond, nil, 0)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Nil(t, resp)
+	assert.False(t, stopped)
+	assert.False(t, capped)
 	wrapped := wrapLokiReplayDiscoveryErr(err)
 	assert.Contains(t, wrapped.Error(), "scan did not finish; this is not an empty result")
 	assert.Contains(t, wrapped.Error(), "narrower --from/--to")
@@ -164,8 +170,11 @@ func TestLokiReplayPagerPreservesExistingSessionDumpBehavior(t *testing.T) {
 	resp, err := fetchLokiEventPages(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second)
 	require.NoError(t, err)
 	assert.Equal(t, lokiEventsPageSize, lokiEntryCount(resp))
-	_, _, err = fetchLokiEventPagesUntil(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, func(*loki.QueryResponse) bool { return false })
+	resp, stopped, capped, err := fetchLokiEventPagesUntilWithPageCap(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, func(*loki.QueryResponse) bool { return false }, 0)
 	require.ErrorContains(t, err, "no valid timestamp")
+	assert.Nil(t, resp)
+	assert.False(t, stopped)
+	assert.False(t, capped)
 }
 
 func TestPinotReplayStartsQueryUsesSessionFetcherTable(t *testing.T) {
