@@ -3,6 +3,7 @@ package loki
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -21,6 +22,10 @@ type Client struct {
 	restConfig  config.NamespacedRESTConfig
 	httpClient  *http.Client
 	queryClient *grafanaquery.Client
+}
+
+var contentFields = map[string]bool{ //nolint:gochecknoglobals // constant-like lookup table
+	"Line": true, "line": true, "body": true, "Body": true, "value": true,
 }
 
 func NewClient(cfg config.NamespacedRESTConfig) (*Client, error) {
@@ -45,6 +50,18 @@ func (c *Client) Query(ctx context.Context, datasourceUID string, req QueryReque
 	grafanaResp, err := c.executeQuery(ctx, body, "query")
 	if err != nil {
 		return nil, err
+	}
+
+	for _, frame := range grafanaResp.Results["A"].Frames {
+		var hasTime, hasValue, hasLine bool
+		for _, field := range frame.Schema.Fields {
+			hasTime = hasTime || field.Type == "time"
+			hasValue = hasValue || field.Type == "number"
+			hasLine = hasLine || contentFields[field.Name]
+		}
+		if hasTime && hasValue && !hasLine {
+			return nil, errors.New("query returned metrics instead of log streams; use `gcx logs metrics` with the same datasource and expression")
+		}
 	}
 
 	return convertGrafanaResponse(grafanaResp), nil
@@ -512,10 +529,6 @@ func convertLegacyFormat(frame DataFrame, result *QueryResponse) {
 	labels := make(map[string]string)
 
 	var fallbackValueIdx = -1
-	contentFields := map[string]bool{
-		"Line": true, "line": true, "body": true, "Body": true, "value": true,
-	}
-
 	for i, field := range frame.Schema.Fields {
 		switch field.Type {
 		case "time":
