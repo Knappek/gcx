@@ -12,7 +12,7 @@ weight: 3
 
 # Authenticate `gcx`
 
-`gcx` supports four ways to authenticate to a Grafana instance:
+`gcx` supports four ways to authenticate to a Grafana instance or stack:
 
 - [OAuth - Grafana Cloud only](#browser-based-oauth-cloud-only-recommended): Browser-based sign-in with `gcx login`. Recommended for interactive use. The tokens are user-scoped: every request runs with your own identity and RBAC permissions, so you can't access anything through `gcx` that you can't already access in the Grafana UI. Refer to [Required role for OAuth sign-in](#required-role-for-oauth-sign-in) for the permission this flow needs.
 - [Service account token](#service-account-token): Works for Grafana Cloud and on-premises instances, and is the recommended method for CI and other non-interactive environments. Refer to [Grafana service accounts](https://grafana.com/docs/grafana/latest/administration/service-accounts/) for how to create one.
@@ -67,6 +67,63 @@ The `grafana-assistant-app.tokens.gcx:access` permission only lets you create `g
 
 If `gcx login` fails with a `Permission Required` error naming the **gcx User** role, ask your Grafana administrator to assign you the **gcx User** role, or a custom role that includes the `grafana-assistant-app.tokens.gcx:access` permission. If the role doesn't exist on your instance, update the Grafana Assistant application to a version that includes it.
 
+### Grafana Cloud product API 
+
+Grafana Cloud platform APIs use a separate credential stored in a named Cloud entry in addition to the Grafana instance auth. 
+
+For automation, log in with a Cloud [Cloud Access Policy token](https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/), which has full command compatibility:
+
+```bash
+gcx login my-stack --server https://my-stack.grafana.net --token glsa_xxx --cloud-token glc_xxx --yes
+```
+
+You can also add Cloud access later by re-running `gcx login` against the same context. The interactive Cloud step can keep the existing CAP or unexpired OAuth credential, accept a new CAP, run the experimental browser-based Cloud OAuth flow, or skip Cloud functionality.
+
+### Direct OAuth on Cloud
+
+Direct Cloud OAuth is available through `gcx cloud login` or the interactive Cloud step of `gcx login`, but remains experimental and is not yet accepted by every Cloud product command. OAuth entries retain token, expiry, granted scopes, and a coherent OAuth/API endpoint pair.
+
+```bash
+gcx cloud login --context my-stack
+```
+To list your Cloud organisation memberships (slugs and roles):
+
+```bash
+gcx cloud login --context my-stack
+gcx cloud orgs list --context my-stack
+```
+
+Default Cloud logins include `profile` alongside stack-management scopes. Run again `login` for existing credentials. `--scope profile` replaces the scope set, so use the default login to retain stack access. 
+
+If `GRAFANA_CLOUD_TOKEN` or `cloud.<entry>.token` is set, unset it when using browser OAuth for organisation listing: access-policy tokens take precedence over OAuth tokens.
+
+The command uses the selected context's Cloud API endpoint, including dev and ops environments. Membership is not a guarantee of
+stack-creation permission. This differs from `gcx api /api/orgs`, which targets organisations inside a Grafana instance.
+
+### Specify your org 
+
+To specify the organisation slug when creating a stack:
+
+```bash
+gcx cloud stacks create --org example-org --name my-stack --slug mystack --region us --dry-run
+```
+Dry runs show the creation request. Review the preview, then omit `--dry-run` to create the stack. Creation defaults to YAML with `name`, `orgSlug`, `slug`, `status` and `url`. Use `stacks get <slug>` for full details. 
+
+`gcx` derives the Cloud stack slug from `--server` when possible. Set it explicitly only for custom domains where gcx cannot derive it:
+
+```bash
+gcx config set stacks.my-stack.slug your-stack-slug
+```
+
+Both `stacks create` and `stacks list` require `--org <slug>`.
+
+### Custom environments
+
+You do not need to set Cloud endpoints for `grafana.com` as `gcx` defaults to `https://grafana.com`. 
+
+For a custom environment, authenticate and store a coherent OAuth/API destination pair: supplying one endpoint to a login command
+uses it for both operations unless you explicitly supply both to `gcx cloud login`. Changing a named entry's `api-url` or `oauth-url` invalidates its old credential, so re-authenticate after the edit.
+
 ## Service account token
 
 Service account tokens work for Cloud or self-managed Grafana, and are useful for CI automation:
@@ -90,76 +147,6 @@ gcx login my-grafana --server https://grafana.example.com --basic-auth --user ad
 For automation, supply `GRAFANA_PASSWORD` and add `--yes`. 
 
 Refer to [Basic authentication](/docs/reference/login#basic-authentication) for credential storage, auth switching, and validation behaviour.
-
-## Grafana Cloud product API 
-
-Grafana Cloud platform APIs use a separate credential stored in a named Cloud entry. A Cloud Access Policy token has full command compatibility and is recommended for automation. 
-
-Cloud product commands need a separate Grafana Cloud platform credential in addition to Grafana instance auth. 
-
-For automation, log in with a
-[Cloud Access Policy token](https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/)
-:
-
-```bash
-gcx login my-stack --server https://my-stack.grafana.net --token glsa_xxx --cloud-token glc_xxx --yes
-```
-
-You can also add Cloud access later by re-running `gcx login` against the same context.
-
-The interactive Cloud step can keep the existing CAP or unexpired OAuth credential, accept a new CAP, run the experimental browser-based Cloud OAuth flow, or skip Cloud functionality:
-
-```bash
-gcx login --context my-stack
-```
-
-## Direct OAuth on Cloud
-
-Direct Cloud OAuth is available through `gcx cloud login` or the interactive Cloud step of `gcx login`, but remains experimental and is not yet accepted by every Cloud product command. OAuth entries retain token, expiry, granted scopes, and a coherent OAuth/API endpoint pair.
-
-```bash
-gcx cloud login --context my-stack
-```
-To list your Cloud organisation memberships (slugs and roles):
-
-```bash
-gcx cloud login --context my-stack
-gcx cloud orgs list --context my-stack
-```
-
-Default Cloud logins include `profile` alongside stack-management scopes.
-Rerun login for existing credentials. `--scope profile` replaces the scope set,
-so use the default login to retain stack access. If `GRAFANA_CLOUD_TOKEN` or
-`cloud.<entry>.token` is set, unset it when using browser OAuth for organisation
-listing: access-policy tokens take precedence over OAuth tokens.
-The command uses the selected context's Cloud API
-endpoint, including dev and ops environments. Membership is not a guarantee of
-stack-creation permission. This differs from `gcx api /api/orgs`, which targets
-organisations inside a Grafana instance.
-
-Specify the organisation slug when creating a stack:
-
-```bash
-gcx cloud stacks create --org example-org --name my-stack --slug mystack --region us --dry-run
-```
-
-Review the preview, then omit `--dry-run` to create the stack. Both
-`stacks create` and `stacks list` require `--org <slug>`.
-Creation defaults to YAML with `name`, `orgSlug`, `slug`, `status` and `url`.
-Use `stacks get <slug>` for full details. Dry runs show the creation request.
-
-`gcx` derives the Cloud stack slug from `--server` when possible. Set it explicitly only for custom domains where gcx cannot derive it:
-
-```bash
-gcx config set stacks.my-stack.slug your-stack-slug
-```
-
-You do not need to set Cloud endpoints for `grafana.com`; gcx defaults to
-`https://grafana.com`. For a custom environment, authenticate and store a
-coherent OAuth/API destination pair: supplying one endpoint to a login command
-uses it for both operations unless you explicitly supply both to
-`gcx cloud login`. Changing a named entry's `api-url` or `oauth-url` invalidates
-its old credential, so re-authenticate after the edit.
 
 ## Environment variables (CI/CD, agents)
 
