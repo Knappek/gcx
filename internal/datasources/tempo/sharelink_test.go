@@ -197,6 +197,15 @@ current-context: default
 		assert.NotContains(t, stderr, "Traces Drilldown link:")
 		assert.Contains(t, stderr, "Explore link: ")
 	})
+
+	t.Run("refuses a link without a time range and says why", func(t *testing.T) {
+		stdout, stderr, err := execTempoCmd(tempo.QueryCmd(loader),
+			[]string{"query", "--drilldown-link", "-o", "json", `{ span.http.status_code = 500 }`})
+		require.NoError(t, err)
+		assert.Contains(t, stdout, `"traceID": "trace-123"`)
+		assert.NotContains(t, stderr, "Traces Drilldown link:")
+		assert.Contains(t, stderr, "Traces Drilldown links require --since or --from/--to")
+	})
 }
 
 func execTempoCmd(cmd *cobra.Command, args []string) (string, string, error) {

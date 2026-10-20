@@ -101,12 +101,15 @@ else falls back to the Explore URL).`,
 			}
 			exploreURL := ""
 			unavailableMsg, failedOpenMsg := dsquery.ExploreMessages("search")
+			drilldownUnavailableMsg, drilldownFailedOpenMsg := dsquery.DrilldownMessages("search", "Traces Drilldown")
+			// Unbounded searches send no start/end, so no link can name the window they covered.
 			switch {
-			case !shared.IsRange() && share.Enabled():
+			case !shared.IsRange():
 				unavailableMsg = "search succeeded, but Grafana Explore links require --since or --from/--to for Tempo trace searches"
-			case limit == 0 && share.Enabled():
+				drilldownUnavailableMsg = "search succeeded, but Traces Drilldown links require --since or --from/--to for Tempo trace searches"
+			case limit == 0:
 				unavailableMsg = "search succeeded, but Grafana Explore links do not support --limit 0 for Tempo trace searches"
-			case shared.IsRange():
+			default:
 				exploreURL = SearchExploreURL(cfg.GrafanaURL, dsquery.ExploreQuery{
 					DatasourceUID:  datasourceUID,
 					DatasourceType: "tempo",
@@ -128,10 +131,9 @@ else falls back to the Explore URL).`,
 			}
 
 			var drilldownURL string
-			if drilldown.Enabled() {
+			if drilldown.Enabled() && shared.IsRange() {
 				drilldownURL, _ = TracesDrilldownURL(cfg.GrafanaURL, datasourceUID, expr, start, end)
 			}
-			drilldownUnavailableMsg, drilldownFailedOpenMsg := dsquery.DrilldownMessages("search", "Traces Drilldown")
 			if err := dsquery.HandleDrilldownLinkWithExploreFallback(cmd, *drilldown, drilldownURL, drilldownUnavailableMsg, drilldownFailedOpenMsg,
 				*share, exploreURL, unavailableMsg, failedOpenMsg); err != nil {
 				return err
