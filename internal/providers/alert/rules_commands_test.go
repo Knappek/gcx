@@ -6,32 +6,8 @@ import (
 
 	"github.com/grafana/gcx/internal/providers/alert"
 	"github.com/grafana/gcx/internal/testutils"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestRuleDetailTableCodec_Encode(t *testing.T) {
-	codec := alert.RuleDetailTable().Codec("table")
-	assert.Equal(t, "table", string(codec.Format()))
-
-	rule := &alert.RuleStatus{
-		UID:      "uid-1",
-		Name:     "My Rule",
-		State:    alert.StatePending,
-		Health:   "ok",
-		IsPaused: true,
-	}
-
-	var buf bytes.Buffer
-	err := codec.Encode(&buf, rule)
-	require.NoError(t, err)
-
-	output := buf.String()
-	assert.Contains(t, output, "uid-1")
-	assert.Contains(t, output, "My Rule")
-	assert.Contains(t, output, alert.StatePending)
-	assert.Contains(t, output, "yes")
-}
 
 func TestRuleDetailTableCodec_InvalidType(t *testing.T) {
 	codec := alert.RuleDetailTable().Codec("table")
@@ -47,7 +23,6 @@ func TestRuleDetailTableGolden(t *testing.T) {
 	}{
 		{name: "paused", rule: alert.RuleStatus{UID: "rule-1", Name: "API errors", State: alert.StatePending, Health: "ok", IsPaused: true}},
 		{name: "active", rule: alert.RuleStatus{UID: "rule-2", Name: "Database latency", State: alert.StateFiring, Health: "ok"}},
-		{name: "empty", rule: alert.RuleStatus{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer

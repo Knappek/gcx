@@ -1,4 +1,4 @@
-# RFC 025: Providers declare table columns instead of writing codecs
+# RFC 025: Providers declare table columns, with typed adapters for wrapper and singleton payloads
 
 **Created**: 2026-09-08
 **Status**: accepted

@@ -397,7 +397,7 @@ on a sample object fetched from the API.
 ### Custom Table Codecs
 
 Ordinary provider tables declare columns with `output.Table[T]` (see
-[ADR-024](../adrs/provider-consolidation/002-shared-table-declaration.md)).
+[RFC 025](../rfcs/025-shared-table-declaration.md)).
 For wrapper or singleton payloads, `output.TableAdapter[P, T]` extracts rows
 inside the human codec while JSON/YAML retain the complete payload:
 
