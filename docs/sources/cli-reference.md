@@ -14,7 +14,7 @@ Flag defaults below are for human mode. Agent mode changes defaults such as outp
 
 - [Commands](#commands)
 - [Environment variables](#environment-variables)
-- [Configuration reference](./configuration#configuration-reference)
+- [Configuration reference](/configuration#configuration-reference)
 
 ## Commands
 

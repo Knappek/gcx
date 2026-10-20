@@ -15,7 +15,7 @@ weight: 3
 You can configure `gcx` with a configuration file or using environment variables.
 
 - A configuration file stores named stacks, named Grafana Cloud credentials, and contexts that bind them. `gcx` can layer system, user, and repository files. Refer to the [configuration file reference documentation](#configuration-reference) for all options.
-  - If you have a file from an older `gcx` version, refer to [Migrate your gcx configuration](./migrate-configuration).
+  - If you have a file from an older `gcx` version, refer to [Migrate your gcx configuration](/migrate-configuration).
 - Environment variables override the selected context in memory, so they work best in CI environments and are never persisted implicitly. Refer to [Configure `gcx` with environment variables](#configure-gcx-with-environment-variables) for more information.
 
 ## Understand the `gcx` configuration file in use
@@ -39,7 +39,7 @@ Credentials in the OS credential store (Keychain on macOS, Credential Manager
 on Windows, Secret Service on Linux) are tied to the canonical config file,
 exact owner kind and name, exact secret field, and normalized destination. Copying a config
 file does not make its stored credentials portable; authenticate the copied
-file separately. Refer to [Keychain credential storage](./keychain)
+file separately. Refer to [Keychain credential storage](/keychain)
 for storage rules and keychain error procedures.
 
 An automatically discovered repository `.gcx.yaml` cannot attach tokens,
@@ -149,7 +149,7 @@ GRAFANA_SERVER='http://localhost:3000' GRAFANA_ORG_ID='1' gcx config check
 
 Depending on your authentication method, also set one of the following:
 
-- If you use a [Grafana service account](https://grafana.com/docs/grafana/latest/administration/service-accounts/) (recommended), set a [token](./cli-reference#grafana_token).
+- If you use a [Grafana service account](https://grafana.com/docs/grafana/latest/administration/service-accounts/) (recommended), set a [token](/cli-reference#environment-variables).
 - If you use basic authentication, set a [username](./cli-reference#grafana_user) and a [password](./cli-reference#grafana_password).
 
 After you configure authentication, you can start using `gcx`.
