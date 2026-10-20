@@ -44,7 +44,7 @@ const (
 //     OutputFormat (the value of --output, filtered to a fixed list of formats),
 //     DryRun (whether the operation ran in dry-run mode), GrafanaAuthMethod
 //     (the authentication category selected for the Grafana connection, clamped
-//     to a fixed vocabulary), and LoginStage (the last login step reached, also
+//     to a fixed vocabulary), and SignupStage (the last step signup reached, also
 //     a fixed vocabulary). None says anything about the user, their
 //     organisation, or their data.
 //
@@ -130,12 +130,12 @@ type Event struct {
 	// including success and canceled.
 	GrafanaAuthMethod string `json:"grafana_auth_method,omitempty"`
 
-	// LoginStage is the last step of the login pipeline `gcx signup` entered,
-	// clamped to the vocabulary in loginstage.go. "complete" means the
+	// SignupStage is the last step of the login pipeline `gcx signup` entered,
+	// clamped to the vocabulary in signupstage.go. "complete" means the
 	// connection was saved. Absent on other commands, gcx login included, and
 	// when signup stopped before the pipeline started. Eligible on every
 	// outcome.
-	LoginStage string `json:"login_stage,omitempty"`
+	SignupStage string `json:"signup_stage,omitempty"`
 
 	// Sanitized `gcx api` passthrough detail, set only for the api command.
 	// Each field carries a closed-vocabulary value produced by

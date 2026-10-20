@@ -34,8 +34,8 @@ func TestUsageStatsPageListsTheFullWireVocabularies(t *testing.T) {
 		assert.Contains(t, text, "`"+bucket+"`",
 			"batch bucket %q is collectable but missing from the published vocabulary", bucket)
 	}
-	for _, stage := range telemetry.LoginStageLabels() {
+	for _, stage := range telemetry.SignupStageLabels() {
 		assert.Contains(t, text, "`"+stage+"`",
-			"login_stage value %q is collectable but missing from the published vocabulary", stage)
+			"signup_stage value %q is collectable but missing from the published vocabulary", stage)
 	}
 }

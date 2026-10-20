@@ -36,8 +36,8 @@ const noticeRevision = "4"
 // single exception: output_format carries the value of --output (filtered to a
 // fixed list of formats), dry_run reports whether the operation ran in dry-run
 // mode (false does not imply anything was mutated), grafana_auth_method is
-// the authentication category, clamped to a fixed vocabulary, and login_stage
-// is the last login step reached, from a fixed vocabulary.
+// the authentication category, clamped to a fixed vocabulary, and signup_stage
+// is the last step signup reached, from a fixed vocabulary.
 // An enumeration like "the only exception is X" is a promise that has to be
 // re-audited against the whole event every time a field is added, and it was
 // wrong the first time it was written.

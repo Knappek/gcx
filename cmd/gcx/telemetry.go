@@ -153,7 +153,7 @@ func buildUsageEvent(info *root.TelemetryInfo, start time.Time, exitCode int) te
 	// probes but does not report them. Like the auth method, the stage is as
 	// interesting for a canceled run as for a failed one.
 	if info.Command == "signup" {
-		event.LoginStage = telemetry.LoginStageLabel(capture.CurrentLoginStage())
+		event.SignupStage = telemetry.SignupStageLabel(capture.CurrentLoginStage())
 	}
 
 	return event

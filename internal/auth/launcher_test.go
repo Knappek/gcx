@@ -267,6 +267,8 @@ func TestFlowRun_ManualStopsOnBrowserCancel(t *testing.T) {
 // alongside the callback server.
 func TestPasteRouteStopsOnBrowserCancel(t *testing.T) {
 	remoteSessionForTest(t)
+	capture.Reset()
+	t.Cleanup(capture.Reset)
 	browser := recordBrowser(t)
 	reader, writerEnd, err := os.Pipe()
 	require.NoError(t, err)
@@ -287,6 +289,7 @@ func TestPasteRouteStopsOnBrowserCancel(t *testing.T) {
 	outcome := waitForOutcome(t, done)
 	require.ErrorIs(t, outcome.err, auth.ErrBrowserCancelled)
 	assert.NotContains(t, out.String(), "That URL did not work")
+	assert.Equal(t, "callback", capture.CurrentLoginStage(), "a pasted Cancel ends the wait")
 }
 
 // TestLauncherAndSignupURLs pins where the browser goes. Without a stack the

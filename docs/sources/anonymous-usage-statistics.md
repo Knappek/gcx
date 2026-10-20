@@ -20,7 +20,7 @@ The one place an argument value is used at all is the `api` command, where the r
 
 For the resource commands that operate on batches, the size of the operation is sent as one of seven fixed categories rather than as a number. Two of those categories, `0` and `1`, cover a single value each, so those two sizes are exact; every larger category is a range. See [How to read the batch fields](#how-to-read-the-batch-fields).
 
-Further fields describe how the command ran rather than naming a flag: `output_format` records the output format used, from a fixed list of known formats; `dry_run` records whether the operation executed in dry-run mode; `grafana_auth_method` records the authentication category selected for the Grafana connection, from a fixed vocabulary and never the credential itself; and `login_stage` records the last step `gcx signup` reached, also from a fixed vocabulary. `output_format` is read from `--output`, which means a command that renders JSON because you passed `--json` is still recorded with `--output`'s value; that mismatch is a known bug rather than intended behaviour. `dry_run` is derived from the operation and is set even for commands that have no `--dry-run` flag; `grafana_auth_method` is described in [Failure and authentication fields](#failure-and-authentication-fields), and `login_stage` in [Signup fields](#signup-fields). Some server-side enrichment is also performed on the usage statistics exported - see [Server-side enrichment](#server-side-enrichment) for details.
+Further fields describe how the command ran rather than naming a flag: `output_format` records the output format used, from a fixed list of known formats; `dry_run` records whether the operation executed in dry-run mode; `grafana_auth_method` records the authentication category selected for the Grafana connection, from a fixed vocabulary and never the credential itself; and `signup_stage` records the last step `gcx signup` reached, also from a fixed vocabulary. `output_format` is read from `--output`, which means a command that renders JSON because you passed `--json` is still recorded with `--output`'s value; that mismatch is a known bug rather than intended behaviour. `dry_run` is derived from the operation and is set even for commands that have no `--dry-run` flag; `grafana_auth_method` is described in [Failure and authentication fields](#failure-and-authentication-fields), and `signup_stage` in [Signup fields](#signup-fields). Some server-side enrichment is also performed on the usage statistics exported - see [Server-side enrichment](#server-side-enrichment) for details.
 
 {{< admonition type="note" >}} Usage statistics reporting is **enabled by default**. See the [Opt out](#opt-out) section below for guidance on how to turn off usage reporting.{{< /admonition >}}
 
@@ -83,7 +83,7 @@ These fields are easy to misread, so the following constraints are part of the c
 
 ### Canceled invocations
 
-An invocation that stopped before it finished reports `outcome: canceled` with `exit_code: 5`, and `error_kind` present but empty, because a stop is not a kind of failure. No property is collected specifically for cancellation — and the failure fields described in [Failure and authentication fields](#failure-and-authentication-fields) are never attached to one, for the same reason. Like every other event it is sent on a best-effort basis. For an invocation you interrupted, pressing Ctrl-C a second time ends the process immediately, before the report is sent; an invocation that stopped for another reason waits out the report like any other run, because there is no interrupt for the second Ctrl-C to follow.
+An invocation that stopped before it finished reports `outcome: canceled` with `exit_code: 5`, and `error_kind` present but empty, because a stop is not a kind of failure. No property records cancellation directly; for `gcx signup`, `signup_stage` shows how far it got. The failure fields described in [Failure and authentication fields](#failure-and-authentication-fields) are never attached to a cancellation, for the same reason. Like every other event it is sent on a best-effort basis. For an invocation you interrupted, pressing Ctrl-C a second time ends the process immediately, before the report is sent; an invocation that stopped for another reason waits out the report like any other run, because there is no interrupt for the second Ctrl-C to follow.
 
 Three things this value does *not* tell you:
 
@@ -126,14 +126,14 @@ These fields are easy to misread, so the following constraints are part of the c
 
 | Field | Description | Example |
 | :---- | :---- | :---- |
-| `login_stage` | The last login step reached. Exactly one of `preflight`, `credentials`, `browser`, `callback`, `validate`, `persist`, `complete`, or `unknown`. | `browser` |
+| `signup_stage` | The last login step reached. Exactly one of `preflight`, `credentials`, `browser`, `callback`, `validate`, `persist`, `complete`, or `unknown`. | `browser` |
 
 The steps, in order:
 
 - `preflight`: checking the flags, the config, and the destination.
 - `credentials`: checking that OAuth credentials can be stored, before the browser opens.
-- `browser`: waiting for the browser login. This covers everything a person does in the browser, such as creating an account, choosing a stack, or approving access, and gcx cannot tell those pages apart.
-- `callback`: the browser came back to gcx with this login's result: an approval whose token gcx then exchanges, a Cancel from the consent page, or another error the browser reported.
+- `browser`: waiting for the browser login, then exchanging its code for a token. This covers everything a person does in the browser, such as creating an account, choosing a stack, or approving access, and gcx cannot tell those pages apart.
+- `callback`: the browser's answer for this login ended the wait: an approval, a Cancel from the consent page, or an error that the browser or the token exchange reported. A pasted URL that gcx rejects does not count.
 - `validate`: credentials were obtained and gcx is checking the connection.
 - `persist`: gcx is saving the connection.
 - `complete`: the connection was saved. A later failure to print the result does not undo it.
@@ -141,7 +141,7 @@ The steps, in order:
 
 These constraints are part of the contract:
 
-- **`canceled` at `callback` is almost always the consent page's Cancel.** An interrupt while waiting for the browser reports `browser`. The exception is an interrupt during the token exchange itself, which is normally brief.
+- **`canceled` at `callback` means the consent page's Cancel.** An interrupt while gcx waits for the browser or exchanges the token reports `browser`.
 - **Absence means signup never started its login**, for example because the arguments were invalid, or that the event came from a version without this field.
 
 ### Parse-failure fields
