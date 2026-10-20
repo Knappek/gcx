@@ -405,36 +405,6 @@ gcx resources edit dashboards/my-dashboard
 gcx resources delete dashboards/my-dashboard
 ```
 
-### TBC 
-
-Unnamed native time interval and template group manifests can share a push
-directory: distinct titles remain separate, and template kind is part of the
-identity. To delete these resources, use the dedicated `alert time-intervals delete`
-or `alert template-groups delete` commands, or pass pulled files with real API
-names to `resources delete -p`; unnamed files are rejected before any request for
-that file. Pull includes read-only native intervals and template groups by default for
-backup, audit, and diffing; `--skip-read-only` excludes them with a reason in the
-summary. Push and delete always skip them. Read commands still show them;
-`resources edit` refuses them before opening an editor. Provisioning export remains under
-`gcx alert mute-timings export` and covers Grafana-managed intervals only. Refer to the [server-derived resource names](docs/architecture/resource-model.md#server-derived-native-names)
-for portable push behavior.
-
-#### Provision Grafana
-
-Contact points, notification policies, templates, and mute timings that gcx
-creates or updates through Grafana's provisioning API remain editable in the
-Grafana UI by default. Pass `--allow-ui-updates=false` to contact-point or
-mute-timing create and update commands, `alert templates upsert`, or
-`alert notification-policies set` to use Grafana's default provisioning
-ownership. Grafana then prevents UI edits to the provisioned item.
-To update a provisioned contact point, keep `--allow-ui-updates=false`.
-Grafana can reject an attempt to make an existing provisioned contact point
-editable in the UI because its provenance cannot be changed by that update.
-
-```bash
-gcx alert contact-points create -f contact-point.yaml --allow-ui-updates=false
-```
-
 ### Synthetic management
 
 Synthetic Monitoring check manifests support optional `spec.folderUid` for folder assignment. Refer to the [Synthetics check management guide](claude-plugin/skills/synth-manage-checks/SKILL.md#step-3-build-yaml-definition) for create/update semantics and cross-stack push guidance.
@@ -523,6 +493,29 @@ jobs:
 - `--on-error abort|fail|ignore` to control error behavior
 - `-o json` or `-o yaml` for machine-parseable output
 - `--jq '<expr>' -o agents` for [jq with compact output and spilling](docs/design/output.md#16-jq-transformation)
+
+### Provisioning and UI updates
+
+Contact points, notification policies, templates, and mute timings that `gcx` creates or updates through Grafana's provisioning API remain editable in the Grafana UI by default. 
+
+Pass `--allow-ui-updates=false` to contact-point or mute-timing create and update commands, `alert templates upsert`, or `alert notification-policies set` to use Grafana's default provisioning ownership. Grafana then prevents UI edits to the provisioned item.
+To update a provisioned contact point, keep `--allow-ui-updates=false`.
+
+Grafana can reject an attempt to make an existing provisioned contact point editable in the UI because its provenance cannot be changed by that update.
+
+```bash
+gcx alert contact-points create -f contact-point.yaml --allow-ui-updates=false
+```
+
+#### TBC 
+
+Unnamed native time interval and template group manifests can share a push directory: distinct titles remain separate, and template kind is part of the identity. 
+
+To delete these resources, use the dedicated `alert time-intervals delete` or `alert template-groups delete` commands, or pass pulled files with real API names to `resources delete -p`; unnamed files are rejected before any request for that file. 
+
+Pull includes read-only native intervals and template groups by default for backup, audit, and diffing; `--skip-read-only` excludes them with a reason in the summary. 
+
+Push and delete always skip them. Read commands still show them; `resources edit` refuses them before opening an editor. Provisioning export remains under `gcx alert mute-timings export` and covers Grafana-managed intervals only. Refer to the [server-derived resource names](docs/architecture/resource-model.md#server-derived-native-names) for portable push behavior.
 
 ### Mobile Frontend Observability apps
 
