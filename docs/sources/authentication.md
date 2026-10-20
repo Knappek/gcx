@@ -17,7 +17,7 @@ weight: 3
 - [OAuth - Grafana Cloud only](#browser-based-oauth-cloud-only-recommended): Browser-based sign-in with `gcx login`. Recommended for interactive use. The tokens are user-scoped: every request runs with your own identity and RBAC permissions, so you can't access anything through `gcx` that you can't already access in the Grafana UI. Refer to [Required role for OAuth sign-in](#required-role-for-oauth-sign-in) for the permission this flow needs.
 - [Service account token](#service-account-token): Works for Grafana Cloud and on-premises instances, and is the recommended method for CI and other non-interactive environments. Refer to [Grafana service accounts](https://grafana.com/docs/grafana/latest/administration/service-accounts/) for how to create one.
 - [Basic authentication](#basic-authentication-self-managed-grafana): Username and password. Use this only when service accounts aren't available.
-- **mTLS**: A client certificate and key for instances behind an identity-aware proxy. Configure the `grafana.tls` fields or corresponding TLS environment variables.
+- mTLS: A client certificate and key for instances behind an identity-aware proxy. Configure the `grafana.tls` fields or corresponding TLS [environment variables](#environment-variables).
 
 ## No Grafana Cloud account yet
 
@@ -148,9 +148,9 @@ For automation, supply `GRAFANA_PASSWORD` and add `--yes`.
 
 Refer to [Basic authentication](/docs/reference/login#basic-authentication) for credential storage, auth switching, and validation behaviour.
 
-## Environment variables (CI/CD, agents)
+## Environment variables 
 
-To authenticate using environment variables:
+For CI/CD or if you're using an AI agent, you can authenticate using environment variables:
 
 ```bash
 export GRAFANA_SERVER="https://your-instance.grafana.net"

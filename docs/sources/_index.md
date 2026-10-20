@@ -27,7 +27,11 @@ cards:
       description: Commands, flags, environment variables, and configuration for the latest stable release.
       href: cli-reference/
       height: 24
-    - title: Configuration
+    - title: Authentication
+      description: Authenticate `gcx`.
+      href: configuration/
+      height: 24
+- title: Configuration
       description: Configure `gcx` with the configuration file or using environment variables.
       href: configuration/
       height: 24
