@@ -279,6 +279,7 @@ layer, so it shows every header that an outer layer adds.
 **Output rendering:** Query results can be rendered as tables, JSON/YAML, or
 terminal charts (`internal/graph`). The `query` command registers custom codecs
 (`queryTableCodec`, `queryGraphCodec`) into the `io.Options` codec registry.
+CSV output support is registered separately per command through `output.RegisterCSV`.
 
 Clients using the unified datasource-query API share `internal/query/grafanaquery` for POST, fallback, and response limits, and `internal/query/dataframe` for wire types. Auto-detecting query routes are disjoint: a kind is expression-dispatchable or redirects to a typed command. See [query flow](data-flows.md#5-query-pipeline).
 

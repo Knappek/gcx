@@ -86,6 +86,30 @@ ioOpts.RegisterCustomCodec("text", myTableCodec)
 ioOpts.DefaultFormat("text")   // makes "text" the default instead of "json"
 ```
 
+CSV is opt-in through `output.RegisterCSV(&opts.IO)` before binding flags.
+Results implement `output.CSVMarshaler`; `output.CSV[T]` also accepts typed
+projections. Both supply export columns and rows independently of terminal tables.
+
+CloudWatch, Cloud Monitoring, Azure Monitor, Elasticsearch, and OpenSearch metric
+CSV exports use `timestamp_rfc3339`: UTC RFC3339 with exactly nine fractional
+digits, including zeros for whole-second samples. This preserves timestamp
+precision and chronological ordering when sorting the column as text. Prometheus
+and Loki retain their source epoch representations in `timestamp_unix_seconds`
+and `timestamp_unix_nano`, respectively. Tempo range metrics use
+`timestamp_unix_ms`; instant metrics omit the timestamp column because the API
+returns no sample timestamp. Tempo search and baseline rows use
+`start_time_unix_nano`.
+
+Azure Log Analytics and Resource Graph time columns retain UTC RFC3339 strings,
+including fractional seconds when present in the source timestamps.
+
+CSV preserves cell values, including formula prefixes. Spreadsheet applications
+may interpret untrusted log messages or label values as formulas; import those
+columns as text rather than opening the CSV directly. Missing Prometheus and Loki
+metric samples are represented as `NaN`, not zero. Their graph output skips
+non-finite samples. Null metric samples from CloudWatch, Cloud Monitoring, Azure
+Monitor, Elasticsearch, and OpenSearch are represented as empty CSV cells.
+
 **Data fetching is format-agnostic.** Commands must fetch all available data
 in `RunE` regardless of the `--output` value. The output format controls
 **presentation**, not **data acquisition**. Table/wide codecs select which
