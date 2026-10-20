@@ -52,6 +52,19 @@ func TestParseStreamSelector_UnsupportedConstructs(t *testing.T) {
 	}
 }
 
+func TestParseStreamSelector_QuoteStylesAndTrailingComma(t *testing.T) {
+	matchers, _, ok := loki.ParseStreamSelector("{app='foo', env=`prod`,}")
+	require.True(t, ok)
+	assert.Equal(t, []loki.LabelMatcher{{Key: "app", Operator: "=", Value: "foo"}, {Key: "env", Operator: "=", Value: "prod"}}, matchers)
+}
+
+func TestParseStreamSelector_RejectsMalformedSelectors(t *testing.T) {
+	for _, expr := range []string{`{app=foo}`, `{app=~"["}`, `{app="a"} {env="b"}`, `{app="a",,env="b"}`} {
+		_, _, ok := loki.ParseStreamSelector(expr)
+		assert.False(t, ok, "expected %q to be rejected", expr)
+	}
+}
+
 func TestParseStreamSelector_EmptySelectorBody(t *testing.T) {
 	_, _, ok := loki.ParseStreamSelector(`{}`)
 	assert.False(t, ok)

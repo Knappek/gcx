@@ -3,6 +3,8 @@ package loki
 import (
 	"strconv"
 	"strings"
+
+	promparser "github.com/prometheus/prometheus/promql/parser"
 )
 
 // LabelMatcher is a single label matcher from a LogQL stream selector, e.g.
@@ -89,45 +91,23 @@ func splitSelector(expr string) (string, string, bool) {
 	return "", "", false
 }
 
-// parseMatchers parses the comma-separated key op "value" pairs inside a
-// stream selector's braces.
+// parseMatchers parses the matchers inside a stream selector's braces with
+// the Prometheus selector parser, whose matcher syntax LogQL shares.
 func parseMatchers(selector string) ([]LabelMatcher, bool) {
-	selector = strings.TrimSpace(selector)
-	if selector == "" {
+	if strings.TrimSpace(selector) == "" {
 		return nil, false
 	}
 
-	var matchers []LabelMatcher
-	for _, part := range splitTopLevelCommas(selector) {
-		m, ok := parseSingleMatcher(strings.TrimSpace(part))
-		if !ok {
-			return nil, false
-		}
-		matchers = append(matchers, m)
-	}
-
-	if len(matchers) == 0 {
+	parsed, err := promparser.NewParser(promparser.Options{}).ParseMetricSelector("{" + selector + "}")
+	if err != nil || len(parsed) == 0 {
 		return nil, false
 	}
 
+	matchers := make([]LabelMatcher, 0, len(parsed))
+	for _, m := range parsed {
+		matchers = append(matchers, LabelMatcher{Key: m.Name, Operator: m.Type.String(), Value: m.Value})
+	}
 	return matchers, true
-}
-
-func parseSingleMatcher(part string) (LabelMatcher, bool) {
-	for _, op := range []string{"!~", "=~", "!=", "="} {
-		idx := strings.Index(part, op)
-		if idx <= 0 {
-			continue
-		}
-		key := strings.TrimSpace(part[:idx])
-		rawValue := strings.TrimSpace(part[idx+len(op):])
-		value, ok := unquote(rawValue)
-		if !ok || key == "" {
-			continue
-		}
-		return LabelMatcher{Key: key, Operator: op, Value: value}, true
-	}
-	return LabelMatcher{}, false
 }
 
 // parseLineFilters parses a sequence of simple `OP "value"` line filters
@@ -211,32 +191,4 @@ func unquote(s string) (string, bool) {
 		return "", false
 	}
 	return unquoted, true
-}
-
-// splitTopLevelCommas splits s on commas that are not inside a quoted string.
-func splitTopLevelCommas(s string) []string {
-	var parts []string
-	inQuotes := false
-	escaped := false
-	start := 0
-	for i, c := range s {
-		switch {
-		case inQuotes:
-			switch {
-			case escaped:
-				escaped = false
-			case c == '\\':
-				escaped = true
-			case c == '"':
-				inQuotes = false
-			}
-		case c == '"':
-			inQuotes = true
-		case c == ',':
-			parts = append(parts, s[start:i])
-			start = i + 1
-		}
-	}
-	parts = append(parts, s[start:])
-	return parts
 }

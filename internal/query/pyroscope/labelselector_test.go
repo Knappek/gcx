@@ -19,6 +19,16 @@ func TestParseLabelSelector(t *testing.T) {
 			want: nil,
 		},
 		{
+			name: "single quotes, backticks and a trailing comma",
+			expr: "{a='1', b=`2`,}",
+			want: []pyroscope.LabelMatcher{{Key: "a", Operator: "=", Value: "1"}, {Key: "b", Operator: "=", Value: "2"}},
+		},
+		{
+			name: "quoted label name keeps its bare key",
+			expr: `{"service.name"="x"}`,
+			want: []pyroscope.LabelMatcher{{Key: "service.name", Operator: "=", Value: "x"}},
+		},
+		{
 			name: "single matcher",
 			expr: `{service_name="frontend"}`,
 			want: []pyroscope.LabelMatcher{{Key: "service_name", Operator: "=", Value: "frontend"}},
@@ -63,6 +73,9 @@ func TestParseLabelSelector_Unsupported(t *testing.T) {
 		"malformed value": `{service_name=frontend}`,
 		"empty key":       `{="frontend"}`,
 		"invalid escape":  `{service_name="a\zb"}`,
+		"invalid regex":   `{service_name=~"["}`,
+		"two selectors":   `{a="x"} {b="y"}`,
+		"unquoted dotted": `{service.name="x"}`,
 	}
 
 	for name, expr := range tests {
