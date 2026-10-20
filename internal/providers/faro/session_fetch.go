@@ -348,10 +348,16 @@ func fetchLokiEventPages(ctx context.Context, client lokiQuerier, uid, query str
 
 // fetchLokiEventPagesUntil scans backward through the requested time range,
 // optionally stopping when stop reports that the caller has enough results.
+// stop is checked only for full pages; a short page proves the range is drained.
 // strictTimestamps makes a full page without a usable timestamp an error;
 // legacy session dumps retain their previous partial-result behavior.
 func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration, stop func(*loki.QueryResponse) bool, strictTimestamps bool, reduce func(*loki.QueryResponse)) (*loki.QueryResponse, bool, error) {
-	merged := &loki.QueryResponse{Data: loki.QueryResultData{ResultType: "streams"}}
+	// Discovery supplies reduce and retains only its summary. Event exports
+	// omit reduce and keep the merged stream.
+	var merged *loki.QueryResponse
+	if reduce == nil {
+		merged = &loki.QueryResponse{Data: loki.QueryResultData{ResultType: "streams"}}
+	}
 	seen := make(map[[sha256.Size]byte]struct{})
 	cursor := end
 	for cursor.After(start) {
@@ -370,9 +376,6 @@ func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, quer
 		recordLokiFingerprints(resp, seen)
 		if n < lokiEventsPageSize {
 			consumeLokiPage(merged, page, reduce)
-			if stop != nil && stop(page) {
-				return mergedLokiPages(merged, reduce), true, nil
-			}
 			break
 		}
 		earliest, ok := minLokiTime(resp)
@@ -400,21 +403,14 @@ func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, quer
 		}
 		consumeLokiPage(merged, page, reduce)
 		if stop != nil && stop(page) {
-			return mergedLokiPages(merged, reduce), true, nil
+			return merged, true, nil
 		}
 		if !earliest.Before(cursor) {
 			break
 		}
 		cursor = earliest
 	}
-	return mergedLokiPages(merged, reduce), false, nil
-}
-
-func mergedLokiPages(merged *loki.QueryResponse, reduce func(*loki.QueryResponse)) *loki.QueryResponse {
-	if reduce != nil {
-		return nil
-	}
-	return merged
+	return merged, false, nil
 }
 
 func consumeLokiPage(merged, page *loki.QueryResponse, reduce func(*loki.QueryResponse)) {

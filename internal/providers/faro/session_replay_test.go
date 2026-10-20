@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/gcx/internal/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"sigs.k8s.io/yaml"
 )
 
 func TestSessionsGetReplayBundlesAllRecordingsAsOneFile(t *testing.T) {
@@ -100,6 +101,7 @@ func TestSessionsGetReplayBundlesAllRecordingsAsOneFile(t *testing.T) {
 }
 
 func TestSessionsGetReplayWritesEmptyRecording(t *testing.T) {
+	testutils.SetAgentMode(t, true)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -112,14 +114,84 @@ func TestSessionsGetReplayWritesEmptyRecording(t *testing.T) {
 		}
 	}))
 	t.Cleanup(server.Close)
-	path := filepath.Join(t.TempDir(), "replay.json")
+	for _, format := range []string{"json", "yaml"} {
+		t.Run(format, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "replay."+format)
+			cmd := newSessionsGetReplayCommand(&fakeConfigLoader{grafanaURL: server.URL})
+			var stdout bytes.Buffer
+			cmd.SetOut(&stdout)
+			args := []string{"sess-1", "--app", "42", "--save", path}
+			if format != "json" {
+				args = append(args, "-o", format)
+			}
+			cmd.SetArgs(args)
+			require.NoError(t, cmd.Execute())
+			var receipt replayArtifactReceipt
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &receipt))
+			assert.Equal(t, format, receipt.Format)
+			data, err := os.ReadFile(path)
+			require.NoError(t, err)
+			var bundle struct {
+				AppID      string `json:"app_id"`
+				SessionID  string `json:"session_id"`
+				Recordings []struct {
+					ID     string       `json:"id"`
+					Events []RRWebEvent `json:"events"`
+				} `json:"recordings"`
+			}
+			if format == "json" {
+				require.NoError(t, json.Unmarshal(data, &bundle))
+			} else {
+				require.NoError(t, yaml.Unmarshal(data, &bundle))
+			}
+			assert.Equal(t, "42", bundle.AppID)
+			assert.Equal(t, "sess-1", bundle.SessionID)
+			require.Len(t, bundle.Recordings, 1)
+			assert.Equal(t, "rec-1", bundle.Recordings[0].ID)
+			assert.Empty(t, bundle.Recordings[0].Events)
+		})
+	}
+}
+
+func TestSessionsGetReplayWritesYAMLEvents(t *testing.T) {
+	testutils.SetAgentMode(t, true)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/sess-1/recordings"):
+			_, _ = w.Write([]byte(`{"items":[{"id":"rec-1"}],"page":{}}`))
+		case strings.HasSuffix(r.URL.Path, "/rec-1/manifest"):
+			_, _ = w.Write([]byte(`{"id":"rec-1","session_id":"sess-1","segments":[{"id":0}]}`))
+		case strings.HasSuffix(r.URL.Path, "/rec-1/segments/0"):
+			_, _ = w.Write([]byte(`{"id":"0","recording_id":"rec-1","events":[{"type":4,"timestamp":1000,"data":{"href":"/replay"}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	path := filepath.Join(t.TempDir(), "replay.yaml")
 	cmd := newSessionsGetReplayCommand(&fakeConfigLoader{grafanaURL: server.URL})
 	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetArgs([]string{"sess-1", "--app", "42", "--save", path})
+	cmd.SetArgs([]string{"sess-1", "--app", "42", "--save", path, "-o", "yaml"})
 	require.NoError(t, cmd.Execute())
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"app_id":"42","session_id":"sess-1","recordings":[{"id":"rec-1","events":[]}]}`, string(data))
+	var bundle struct {
+		AppID      string `json:"app_id"`
+		SessionID  string `json:"session_id"`
+		Recordings []struct {
+			ID     string       `json:"id"`
+			Events []RRWebEvent `json:"events"`
+		} `json:"recordings"`
+	}
+	require.NoError(t, yaml.Unmarshal(data, &bundle))
+	assert.Equal(t, "42", bundle.AppID)
+	assert.Equal(t, "sess-1", bundle.SessionID)
+	require.Len(t, bundle.Recordings, 1)
+	assert.Equal(t, "rec-1", bundle.Recordings[0].ID)
+	require.Len(t, bundle.Recordings[0].Events, 1)
+	assert.JSONEq(t, `{"type":4,"timestamp":1000,"data":{"href":"/replay"}}`, string(bundle.Recordings[0].Events[0]))
 }
 
 func TestSessionsGetReplayFetchesBoundedSegmentsInManifestOrder(t *testing.T) {
@@ -265,6 +337,10 @@ func TestSessionsGetReplayValidatesFlagsBeforeIO(t *testing.T) {
 		{args: []string{"sess-1", "--app", "42"}, wantErr: "--save is required"},
 		{args: []string{"sess-1", "--app", "my-web-app", "--save", "replay.json"}, wantErr: "expected a numeric ID or slug-id"},
 		{args: []string{"", "--app", "42", "--save", "replay.json"}, wantErr: "non-empty session ID"},
+		{args: []string{"sess-1", "--app", "42", "--save", "replay.json", "-o", "agents"}, wantErr: "cannot be used with get-replay"},
+		{args: []string{"sess-1", "--app", "42", "--save", "replay.json", "-o", "table"}, wantErr: "use -o json or -o yaml"},
+		{args: []string{"sess-1", "--app", "42", "--save", "replay.json", "--json", "session_id"}, wantErr: "--json cannot be used with get-replay"},
+		{args: []string{"sess-1", "--app", "42", "--save", "replay.json", "--jq", "."}, wantErr: "--jq cannot be used with get-replay"},
 	}
 	for _, tt := range tests {
 		cmd := newSessionsGetReplayCommand(&fakeConfigLoader{})

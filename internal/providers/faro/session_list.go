@@ -198,7 +198,10 @@ func queryLokiReplaySessions(ctx context.Context, cfg config.NamespacedRESTConfi
 		return nil, nil, fmt.Errorf("creating Loki client: %w", err)
 	}
 	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
-	_, stopped, err := fetchLokiEventPagesUntil(ctx, client, uid, lokiReplayDiscoveryQuery(appID), start, end, sessionLokiQueryTimeout, replaySessionLimitStop(limit), true, accumulator.addPage)
+	stop := func(*loki.QueryResponse) bool {
+		return limit > 0 && len(accumulator.sessions) > limit
+	}
+	_, stopped, err := fetchLokiEventPagesUntil(ctx, client, uid, lokiReplayDiscoveryQuery(appID), start, end, sessionLokiQueryTimeout, stop, true, accumulator.addPage)
 	if err != nil {
 		return nil, nil, wrapLokiReplayDiscoveryErr(err)
 	}
@@ -216,26 +219,6 @@ func wrapLokiReplayDiscoveryErr(err error) error {
 		return fmt.Errorf("loki replay discovery timed out after %s (scan did not finish; this is not an empty result); try a narrower --from/--to or a Pinot datasource UID (-d)", sessionLokiQueryTimeout)
 	}
 	return fmt.Errorf("querying Loki: %w", err)
-}
-
-func replaySessionLimitStop(limit int) func(*loki.QueryResponse) bool {
-	seen := make(map[string]struct{})
-	return func(page *loki.QueryResponse) bool {
-		if limit <= 0 {
-			return false
-		}
-		for _, stream := range page.Data.Result {
-			for _, entry := range stream.Values {
-				if _, valid := parseLokiUnixNano(entry.Timestamp); !valid {
-					continue
-				}
-				if sessionID := parseLogfmt(entry.Line)["session_id"]; sessionID != "" {
-					seen[sessionID] = struct{}{}
-				}
-			}
-		}
-		return len(seen) > limit
-	}
 }
 
 func queryPinotReplaySessions(ctx context.Context, cfg config.NamespacedRESTConfig, uid, appID string, start, end time.Time, limit int) ([]replaySessionListRow, *cmdio.ListMeta, error) {
@@ -271,12 +254,13 @@ func fetchPinotReplaySessions(ctx context.Context, client pinotQuerier, uid, app
 			return nil, nil, fmt.Errorf("pinot replay sessions page %d repeated without new sessions", pageNum+1)
 		}
 		rows = append(rows, page...)
+		if resp == nil || len(resp.Rows) < pageSize {
+			items, meta := cmdio.TruncateCompleteList(rows, limit)
+			return items, meta, nil
+		}
 		if limit > 0 && len(rows) > limit {
 			items, meta := cmdio.TruncatePagedList(rows, limit)
 			return items, meta, nil
-		}
-		if resp == nil || len(resp.Rows) < pageSize {
-			return rows, nil, nil
 		}
 	}
 }
@@ -386,13 +370,4 @@ func (a *replaySessionAccumulator) rows() []replaySessionListRow {
 		rows[i] = ordered[i].row
 	}
 	return rows
-}
-
-// extractReplaySessionRows parses Loki stream results into deduplicated replay session rows.
-// When a session appears multiple times, the most recent entry wins.
-// Results are sorted by last seen time (most recent first).
-func extractReplaySessionRows(resp *loki.QueryResponse) []replaySessionListRow {
-	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
-	accumulator.addPage(resp)
-	return accumulator.rows()
 }

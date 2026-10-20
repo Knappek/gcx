@@ -67,13 +67,24 @@ func fetchReplaySegmentBatch(ctx context.Context, client *Client, appID, session
 }
 
 type sessionsGetReplayOpts struct {
-	App  string
-	Save string
+	IO    cmdio.Options
+	App   string
+	Save  string
+	flags *pflag.FlagSet
 }
 
 func (o *sessionsGetReplayOpts) setup(flags *pflag.FlagSet) {
+	o.IO.PinDefaultFormat("json")
+	o.IO.HideFormat("agents")
+	o.IO.HideFormat("text")
+	o.IO.HideFormat("table")
+	o.IO.HideFormat("wide")
+	o.IO.BindFlags(flags)
+	o.flags = flags
+	_ = flags.MarkHidden("json")
+	_ = flags.MarkHidden("jq")
 	flags.StringVar(&o.App, "app", "", "Frontend Observability app slug-id or numeric id (required)")
-	flags.StringVar(&o.Save, "save", "", "Path for the complete session replay JSON (required)")
+	flags.StringVar(&o.Save, "save", "", "Path for the complete session replay in the selected -o format (required)")
 }
 
 func (o *sessionsGetReplayOpts) Validate() error {
@@ -85,7 +96,20 @@ func (o *sessionsGetReplayOpts) Validate() error {
 	if o.Save == "" {
 		return errors.New("--save is required")
 	}
-	return nil
+	switch o.IO.OutputFormat {
+	case "json", "yaml":
+	default:
+		return fmt.Errorf("output format %q cannot be used with get-replay: use -o json or -o yaml", o.IO.OutputFormat)
+	}
+	if o.flags != nil {
+		if f := o.flags.Lookup("json"); f != nil && f.Changed {
+			return errors.New("--json cannot be used with get-replay: the selected fields would not be written to the replay file; use -o json or -o yaml")
+		}
+		if f := o.flags.Lookup("jq"); f != nil && f.Changed {
+			return errors.New("--jq cannot be used with get-replay: the transformed output would not be written to the replay file; use -o json or -o yaml")
+		}
+	}
+	return o.IO.Validate()
 }
 
 type replayArtifactReceipt struct {
@@ -100,11 +124,15 @@ func newSessionsGetReplayCommand(loader RESTConfigLoader) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get-replay <session-id>",
 		Short: "Save all replays for a Frontend Observability session.",
-		Long: `Save every recording in a session to one JSON file. Each recording
-contains its complete rrweb event stream, assembled from its segments in order.
-Recording boundaries are preserved because separate recordings can overlap in time.`,
+		Long: `Save every recording in a session to one file. JSON is the default format;
+use -o yaml to write YAML. Each recording contains its complete rrweb event
+stream, assembled from its segments in order. Recording boundaries are preserved
+because separate recordings can overlap in time.`,
 		Example: `  # Save the replay for a session to a private JSON file.
-  gcx frontend sessions get-replay abc-session-123 --app my-web-app-42 --save replay.json`,
+  gcx frontend sessions get-replay abc-session-123 --app my-web-app-42 --save replay.json
+
+  # Save it as YAML instead.
+  gcx frontend sessions get-replay abc-session-123 --app my-web-app-42 --save replay.yaml -o yaml`,
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 				return errors.New("expected one non-empty session ID")
@@ -136,13 +164,13 @@ Recording boundaries are preserved because separate recordings can overlap in ti
 			if len(recordings) == 0 {
 				return fmt.Errorf("no replay found for session %s with app ID %s (the app may not exist or have no replay)", sessionID, appID)
 			}
-			count, err := saveSessionReplayEvents(ctx, client, appID, sessionID, recordings, opts.Save)
+			count, err := saveSessionReplayEvents(ctx, client, appID, sessionID, recordings, opts.Save, opts.IO.OutputFormat)
 			if err != nil {
 				return err
 			}
 			replayURL := sessionReplayURL(cfg.GrafanaURL, appID, sessionID)
 			receipt := replayArtifactReceipt{
-				ArtifactReceipt: cmdio.NewArtifactReceipt("get-replay", "json"),
+				ArtifactReceipt: cmdio.NewArtifactReceipt("get-replay", opts.IO.OutputFormat),
 				EventCount:      count,
 				ReplayURL:       replayURL,
 			}
@@ -163,9 +191,92 @@ func sessionReplayURL(host, appID, sessionID string) string {
 		url.PathEscape(appID) + "/session/" + url.PathEscape(sessionID)
 }
 
+func writeReplayBundleHeader(out io.Writer, appID, sessionID, outputFormat string) error {
+	appJSON, err := json.Marshal(appID)
+	if err != nil {
+		return err
+	}
+	sessionJSON, err := json.Marshal(sessionID)
+	if err != nil {
+		return err
+	}
+	if outputFormat == "yaml" {
+		_, err = fmt.Fprintf(out, "app_id: %s\nsession_id: %s\nrecordings:\n", appJSON, sessionJSON)
+		return err
+	}
+	_, err = fmt.Fprintf(out, "{\"app_id\":%s,\"session_id\":%s,\"recordings\":[\n", appJSON, sessionJSON)
+	return err
+}
+
+func writeReplayRecordingHeader(out io.Writer, recordingID string, outputFormat string, first bool) error {
+	idJSON, err := json.Marshal(recordingID)
+	if err != nil {
+		return err
+	}
+	if outputFormat == "yaml" {
+		_, err = fmt.Fprintf(out, "  - id: %s\n    events: [", idJSON)
+		return err
+	}
+	if !first {
+		if _, err := io.WriteString(out, ",\n"); err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintf(out, "{\"id\":%s,\"events\":[\n", idJSON)
+	return err
+}
+
+func writeReplayEvent(out io.Writer, encoder *json.Encoder, event RRWebEvent, outputFormat string, first bool) error {
+	if outputFormat != "yaml" {
+		if !first {
+			if _, err := io.WriteString(out, ",\n"); err != nil {
+				return err
+			}
+		}
+		if err := encoder.Encode(event); err != nil {
+			return fmt.Errorf("encoding replay event: %w", err)
+		}
+		return nil
+	}
+	prefix := ",\n      "
+	if first {
+		prefix = "\n      "
+	}
+	if _, err := io.WriteString(out, prefix); err != nil {
+		return err
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("encoding replay event: %w", err)
+	}
+	_, err = out.Write(data)
+	return err
+}
+
+func writeReplayRecordingFooter(out io.Writer, outputFormat string, eventCount int) error {
+	if outputFormat == "yaml" {
+		if eventCount > 0 {
+			_, err := io.WriteString(out, "\n    ]\n")
+			return err
+		}
+		_, err := io.WriteString(out, "]\n")
+		return err
+	}
+	_, err := io.WriteString(out, "]}")
+	return err
+}
+
+func writeReplayBundleFooter(out io.Writer, outputFormat string) error {
+	if outputFormat == "yaml" {
+		return nil
+	}
+	_, err := io.WriteString(out, "]}\n")
+	return err
+}
+
 // saveSessionReplayEvents bundles every recording, preserving boundaries and
 // manifest segment order. The destination stays intact if any read fails.
-func saveSessionReplayEvents(ctx context.Context, client *Client, appID, sessionID string, recordings []RecordingListItem, path string) (int, error) {
+func saveSessionReplayEvents(ctx context.Context, client *Client, appID, sessionID string, recordings []RecordingListItem, path, outputFormat string) (int, error) {
 	manifests, err := fetchReplayManifests(ctx, client, appID, sessionID, recordings)
 	if err != nil {
 		return 0, err
@@ -178,15 +289,7 @@ func saveSessionReplayEvents(ctx context.Context, client *Client, appID, session
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
 	out := bufio.NewWriterSize(tmp, 64*1024)
-	sessionJSON, err := json.Marshal(sessionID)
-	if err != nil {
-		return 0, err
-	}
-	appJSON, err := json.Marshal(appID)
-	if err != nil {
-		return 0, err
-	}
-	if _, err := fmt.Fprintf(out, "{\"app_id\":%s,\"session_id\":%s,\"recordings\":[\n", appJSON, sessionJSON); err != nil {
+	if err := writeReplayBundleHeader(out, appID, sessionID, outputFormat); err != nil {
 		return 0, err
 	}
 	encoder := json.NewEncoder(out)
@@ -194,19 +297,12 @@ func saveSessionReplayEvents(ctx context.Context, client *Client, appID, session
 	count := 0
 	for i, recording := range recordings {
 		manifest := manifests[i]
-		if i > 0 {
-			if _, err := io.WriteString(out, ",\n"); err != nil {
-				return 0, err
-			}
-		}
-		idJSON, err := json.Marshal(recording.ID)
-		if err != nil {
-			return 0, err
-		}
-		if _, err := fmt.Fprintf(out, "{\"id\":%s,\"events\":[\n", idJSON); err != nil {
+		if err := writeReplayRecordingHeader(out, recording.ID, outputFormat, i == 0); err != nil {
 			return 0, err
 		}
 		recordingCount := 0
+		// Keep each batch bounded so only ten segment payloads are held in
+		// memory at once, even when a recording manifest is very large.
 		for start := 0; start < len(manifest.Segments); start += replayFetchConcurrency {
 			end := min(start+replayFetchConcurrency, len(manifest.Segments))
 			segments, err := fetchReplaySegmentBatch(ctx, client, appID, sessionID, recording.ID, manifest.Segments[start:end])
@@ -215,24 +311,19 @@ func saveSessionReplayEvents(ctx context.Context, client *Client, appID, session
 			}
 			for _, segment := range segments {
 				for _, event := range segment.Events {
-					if recordingCount > 0 {
-						if _, err := io.WriteString(out, ",\n"); err != nil {
-							return 0, err
-						}
-					}
-					if err := encoder.Encode(event); err != nil {
-						return 0, fmt.Errorf("encoding replay event: %w", err)
+					if err := writeReplayEvent(out, encoder, event, outputFormat, recordingCount == 0); err != nil {
+						return 0, err
 					}
 					recordingCount++
 					count++
 				}
 			}
 		}
-		if _, err := io.WriteString(out, "]}"); err != nil {
+		if err := writeReplayRecordingFooter(out, outputFormat, recordingCount); err != nil {
 			return 0, err
 		}
 	}
-	if _, err := io.WriteString(out, "]}\n"); err != nil {
+	if err := writeReplayBundleFooter(out, outputFormat); err != nil {
 		return 0, err
 	}
 	if err := out.Flush(); err != nil {

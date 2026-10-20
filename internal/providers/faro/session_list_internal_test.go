@@ -62,14 +62,16 @@ func TestLokiReplayPagesStopAfterSessionLimit(t *testing.T) {
 		})
 	}
 	query := `{kind="event"}`
-	stop := func(page *loki.QueryResponse) bool {
-		return len(extractReplaySessionRows(page)) > 50
+	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
+	stop := func(*loki.QueryResponse) bool {
+		return len(accumulator.sessions) > 50
 	}
-	page, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", query, time.UnixMilli(0), time.UnixMilli(2000000), sessionLokiQueryTimeout, stop, false, nil)
+	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", query, time.UnixMilli(0), time.UnixMilli(2000000), sessionLokiQueryTimeout, stop, false, accumulator.addPage)
 	require.NoError(t, err)
 	assert.True(t, stopped)
-	assert.Greater(t, len(extractReplaySessionRows(page)), 50)
-	items, meta := cmdio.TruncatePagedList(extractReplaySessionRows(page), 50)
+	rows := accumulator.rows()
+	assert.Greater(t, len(rows), 50)
+	items, meta := cmdio.TruncatePagedList(rows, 50)
 	assert.Len(t, items, 50)
 	assert.Equal(t, 50, meta.Returned)
 	assert.Zero(t, meta.Cap)
@@ -108,7 +110,7 @@ func (c *multiPageReplayLoki) Query(_ context.Context, _ string, req loki.QueryR
 func TestLokiReplayDiscoveryDrainsPastFormerPageCap(t *testing.T) {
 	client := &multiPageReplayLoki{}
 	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
-	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, replaySessionLimitStop(0), true, accumulator.addPage)
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, func(*loki.QueryResponse) bool { return false }, true, accumulator.addPage)
 	require.NoError(t, err)
 	assert.False(t, stopped)
 	assert.Equal(t, 102, client.dataPages)
@@ -118,6 +120,26 @@ func TestLokiReplayDiscoveryDrainsPastFormerPageCap(t *testing.T) {
 	assert.Len(t, rows, 2)
 	_, meta := cmdio.TruncateCompleteList(rows, 0)
 	assert.Nil(t, meta, "a fully drained time range is a complete result")
+}
+
+func TestLokiReplayDiscoveryReportsObservedTotalAfterShortPage(t *testing.T) {
+	dataset := []loki.LogEntry{
+		{Timestamp: lokiUnixNanoMS(1_000), Line: "session_id=sess-a"},
+		{Timestamp: lokiUnixNanoMS(2_000), Line: "session_id=sess-b"},
+		{Timestamp: lokiUnixNanoMS(3_000), Line: "session_id=sess-c"},
+	}
+	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
+	stop := func(*loki.QueryResponse) bool { return len(accumulator.sessions) > 2 }
+	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", `{kind="event"}`, time.UnixMilli(0), time.UnixMilli(10_000), sessionLokiQueryTimeout, stop, true, accumulator.addPage)
+	require.NoError(t, err)
+	assert.False(t, stopped, "a short page means the selected range was drained")
+	rows, meta := cmdio.TruncateCompleteList(accumulator.rows(), 2)
+	assert.Len(t, rows, 2)
+	require.NotNil(t, meta)
+	require.NotNil(t, meta.Total)
+	assert.Equal(t, 3, *meta.Total)
+	meta = cmdio.AttachListMeta(meta, []string{"gcx", "frontend", "apps", "list-replay-sessions", "42"})
+	assert.Contains(t, meta.Continue, "--limit 0")
 }
 
 func TestLokiReplayPagerPassesOnlyNewPageToStopPredicate(t *testing.T) {
@@ -136,19 +158,6 @@ func TestLokiReplayPagerPassesOnlyNewPageToStopPredicate(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, stopped)
 	assert.Equal(t, []int{lokiEventsPageSize, lokiEventsPageSize}, pageSizes)
-}
-
-func TestReplaySessionLimitStopCountsDistinctSessionsAcrossPages(t *testing.T) {
-	stop := replaySessionLimitStop(2)
-	page := func(ids ...string) *loki.QueryResponse {
-		entries := make([]loki.LogEntry, 0, len(ids))
-		for i, id := range ids {
-			entries = append(entries, loki.LogEntry{Timestamp: lokiUnixNanoMS(int64(i + 1)), Line: "session_id=" + id})
-		}
-		return &loki.QueryResponse{Data: loki.QueryResultData{Result: []loki.StreamEntry{{Values: entries}}}}
-	}
-	assert.False(t, stop(page("sess-a", "sess-b")))
-	assert.True(t, stop(page("sess-b", "sess-c")))
 }
 
 func TestLokiReplayDiscoveryQueryTimesOut(t *testing.T) {
@@ -279,6 +288,17 @@ func TestPinotReplaySessionPagerDeduplicatesAcrossPages(t *testing.T) {
 	assert.Nil(t, meta)
 	assert.Len(t, rows, pinotJourneyPageSize+1)
 	assert.Equal(t, "new-session", rows[len(rows)-1].SessionID)
+}
+
+func TestPinotReplaySessionPagerReportsObservedTotalAfterShortPage(t *testing.T) {
+	first := replayPinotRows(1000)
+	second := replayPinotRowsFrom(1000, 600)
+	rows, meta, err := fetchPinotReplaySessions(t.Context(), replayPinotPages{first: first, second: second}, "uid", "66", "https://example.grafana.net", time.Unix(1, 0), time.Unix(2, 0), 1500)
+	require.NoError(t, err)
+	assert.Len(t, rows, 1500)
+	require.NotNil(t, meta)
+	require.NotNil(t, meta.Total)
+	assert.Equal(t, 1600, *meta.Total)
 }
 
 func TestPinotReplaySessionPagerRejectsRepeatedPage(t *testing.T) {

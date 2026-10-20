@@ -13,6 +13,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func extractReplaySessionRows(resp *loki.QueryResponse) []replaySessionListRow {
+	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
+	accumulator.addPage(resp)
+	return accumulator.rows()
+}
+
 func TestExtractReplaySessionRows(t *testing.T) {
 	resp := &loki.QueryResponse{
 		Status: "success",
