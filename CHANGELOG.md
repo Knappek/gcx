@@ -4,54 +4,6 @@
 
 - Classify CLI failures with consistent category summaries and preserve operation context, server messages, codes, and trace IDs without repeated diagnostics. HTTP 401/403 errors carried by shared provider transports, Assistant helpers, and `gcx api`, missing Cloud credentials, and missing SM credentials/stack prerequisites now exit 3 instead of 1; the instrumentation mutual-exclusion error converter now assigns exit 2 instead of 1 (the current setup command does not emit its sentinel). HTML error pages are replaced with generic API-response details while retaining auth classification; `gcx api` continues to show the full body. Fleet 404s mean `Resource not found` only for Connect `code: "not_found"`; other 404s mean `Endpoint not available`.
 
-### Breaking changes
-
-- `--filter` on `gcx dbo11y instances list` and `gcx dbo11y instances get`
-  matches exact key values only. `!=`, `=~` and `!~` now exit 2, as does
-  giving one label two values. On `gcx dbo11y instances get` it accepts only
-  `database`, `datname`, `schema`, `query_id` and `digest`; any other field
-  exits 2.
-- `gcx dbo11y instances get --top 0` returns the API maximum of 100
-  statements rather than every one. The queries route caps its `limit` at
-  100 and offers no way to page past it.
-
-### New commands and improvements
-
-- `gcx dbo11y instances get` reports the instance's session state under
-  `sessions`: the connection count against the engine's own limit, the
-  breakdown by session state, and the age of the oldest open transaction.
-  The limit is new — the previous implementation reported counts with
-  nothing to compare them against.
-- `--since` sizes the window both `top_queries` and `wait_events` cover. It
-  does not move `instance.metrics`, which the API reports over a fixed
-  five-minute window.
-- `gcx dbo11y instances get` reports where the instance is waiting under
-  `wait_events`, across every query rather than one at a time, using the
-  collector's own categories (`IO Wait`, `Lock Wait`, and so on) rather
-  than raw engine event names. Each row is `{type, wait_seconds}`; the
-  previous `{type, event, count}` counted waiting sessions per raw event.
-- `gcx dbo11y instances list` reports the collector's labels under
-  `labels`, keyed by raw label name — which is what `--filter` matches, so
-  what you see is what you can filter by. `namespace` and `environment`
-  continue to be reported as their own fields, lifted out of that map.
-- `gcx dbo11y instances get` reports `health.up` as the instance's presence
-  in the Database Observability inventory. The collector stops publishing an
-  instance it cannot reach, so presence is the health signal rather than a
-  separate check. `health`'s scrape-detail fields (`has_up`, `scrape_error`,
-  `has_scrape_error`, `scrape_duration_seconds`, `has_scrape_duration`) are
-  gone with the Postgres exporter metrics they read.
-- `gcx dbo11y instances get` reports the session count, its breakdown and
-  the transaction age under `sessions` rather than as top-level
-  `connections` and `longest_tx_seconds`/`has_longest_tx`. `sessions.by_state`
-  is a map keyed by state, where `connections` was a list of
-  `{state, count}` rows.
-- `gcx dbo11y instances list` and `get` read the Database Observability
-  API instead of building PromQL themselves, so they report instances on
-  stacks the previous approach could not see at all, and cover MySQL and
-  SQL Server alongside Postgres. `instances get` adds a RED rollup, the
-  statement's own SQL text, rows examined and a per-query error rate, and
-  accepts the product's `server_id` as well as the instance name.
-
 ## v1.6.0 (2026-10-13)
 
 ### Breaking changes
