@@ -34,10 +34,9 @@ func TestQuery_StepBudget(t *testing.T) {
 		{name: "minimum step", rangeMs: 10, step: time.Millisecond, wantBudget: 10},
 		{name: "sub-millisecond step", rangeMs: 10, step: time.Microsecond, wantErr: "must be at least 1ms"},
 		{name: "negative step", rangeMs: 10, step: -time.Second, wantErr: "must be at least 1ms"},
-		{name: "at limit", rangeMs: 100000000, step: time.Second, wantBudget: 100000},
-		{name: "over limit", rangeMs: 100001000, step: time.Second, wantErr: "budget of 100001"},
-		{name: "unaligned over limit", rangeMs: 100000001, step: time.Second, wantErr: "budget of 100001"},
-		{name: "ceiling does not overflow", rangeMs: math.MaxInt64, step: time.Second, wantErr: "budget of 9223372036854776"},
+		{name: "large budget", rangeMs: 100001000, step: time.Second, wantBudget: 100001},
+		{name: "unaligned large budget", rangeMs: 100000001, step: time.Second, wantBudget: 100001},
+		{name: "ceiling does not overflow", rangeMs: math.MaxInt64, step: time.Second, wantBudget: 9223372036854776},
 		{name: "reversed range", rangeMs: -1, step: time.Second, wantErr: "range must be non-negative"},
 		{name: "instant unchanged", rangeMs: 3600000, step: time.Second, instant: true},
 	}

@@ -33,8 +33,7 @@ EXPR is the PromQL expression to evaluate, passed as a positional argument or
 via --expr (familiar to promtool users).
 Datasource is resolved from -d flag or datasources.prometheus in your context.
 For range queries, --step must be at least 1ms and is sent in whole milliseconds.
-An explicit step sets the point budget to ceil(range / step), up to 100000.
-Larger budgets are rejected; increase --step or shorten the time range.
+An explicit step sets the point budget to ceil(range / step).
 The datasource may still impose a coarser interval. JSON output reports observed
 timestamp spacing in resolution; gaps in data can also increase that spacing.
 Use --share-link to print the equivalent Grafana Explore URL, or --open to

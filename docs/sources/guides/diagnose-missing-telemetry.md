@@ -98,7 +98,7 @@ gcx metrics query 'vector(1)' --datasource 'PROMETHEUS_DATASOURCE_UID' \
   --config "$GCX_CONFIG" --context diagnostics
 ```
 
-gcx derives the point budget from the range and step so Grafana's default budget doesn't reduce the requested resolution. The minimum step is `1ms`; budgets above `100000` intervals are rejected. Increase `--step` or shorten the range if the budget exceeds this limit. Omitting `--step` preserves the default interval behavior.
+gcx derives the point budget from the range and step so Grafana's default budget doesn't reduce the requested resolution. The minimum step is `1ms`; Grafana and the datasource enforce their own query limits. Omitting `--step` preserves the default interval behavior.
 
 JSON output includes the requested and observed timestamp spacing in `resolution`. gcx warns when they differ. Datasource limits or gaps in data can increase the observed spacing, so a coarser result alone doesn't prove that samples are missing from storage.
 

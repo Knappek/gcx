@@ -22,7 +22,6 @@ func TestQueryCmd_RejectsInvalidStepBeforeConfig(t *testing.T) {
 		{"0s", "must be at least 1ms"},
 		{"-1s", "must be at least 1ms"},
 		{"500us", "invalid --step duration"},
-		{"1ms", "exceeding the client limit"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.step, func(t *testing.T) {

@@ -11,8 +11,6 @@ import (
 	"github.com/grafana/gcx/internal/query/dataframe"
 )
 
-const maxDataPointsLimit int64 = 100000
-
 // QueryRequest represents a Prometheus query request.
 type QueryRequest struct {
 	Query   string
@@ -48,9 +46,6 @@ func (r QueryRequest) maxDataPoints() (int64, error) {
 	required := rangeMs / stepMs
 	if rangeMs%stepMs != 0 {
 		required++
-	}
-	if required > maxDataPointsLimit {
-		return 0, fmt.Errorf("query requires a maxDataPoints budget of %d, exceeding the client limit of %d; increase --step or shorten the time range", required, maxDataPointsLimit)
 	}
 	return required, nil
 }
