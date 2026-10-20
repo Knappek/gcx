@@ -40,8 +40,6 @@ const (
 
 	recordingsReadAction = "grafana-sessionreplay-app.recordings:read"
 	recordingsReadRole   = "Recordings Viewer"
-
-	replayRecordingsMaxPages = 100
 )
 
 // routeDenied returns err as a PluginRouteDeniedError when the plugin proxy
@@ -310,6 +308,8 @@ func (c *Client) DeleteSourcemaps(ctx context.Context, appID string, bundleIDs [
 
 	return nil
 }
+
+const replayRecordingsMaxPages = 100
 
 // ListRecordings retrieves every recording for a session using pagination.
 func (c *Client) ListRecordings(ctx context.Context, appID, sessionID string) ([]RecordingListItem, error) {

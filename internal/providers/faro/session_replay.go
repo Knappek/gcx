@@ -177,9 +177,6 @@ func saveSessionReplayEvents(ctx context.Context, client *Client, appID, session
 	}
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
-	if err := tmp.Chmod(0o600); err != nil {
-		return 0, err
-	}
 	out := bufio.NewWriterSize(tmp, 64*1024)
 	sessionJSON, err := json.Marshal(sessionID)
 	if err != nil {

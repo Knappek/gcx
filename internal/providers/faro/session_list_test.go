@@ -2,7 +2,6 @@ package faro //nolint:testpackage // Tests the unexported replay session parser 
 
 import (
 	"bytes"
-	"strconv"
 	"testing"
 	"time"
 
@@ -124,13 +123,12 @@ func TestListReplaySessionsAllowsZeroLimit(t *testing.T) {
 	require.NoError(t, opts.Validate())
 }
 
-func TestListReplaySessionsLimitHelpDisclosesPinotCap(t *testing.T) {
+func TestListReplaySessionsUsesSharedLimitHelp(t *testing.T) {
 	cmd := newListReplaySessionsCommand(nil)
 	limit, err := cmd.Flags().GetInt("limit")
 	require.NoError(t, err)
 	assert.Equal(t, 1000, limit)
-	assert.Contains(t, cmd.Flags().Lookup("limit").Usage, strconv.Itoa(pinotReplaySessionsSafetyCap))
-	assert.Contains(t, cmd.Flags().Lookup("limit").Usage, "Loki")
+	assert.Equal(t, "Maximum number of sessions to return. 0 means all results are returned", cmd.Flags().Lookup("limit").Usage)
 }
 
 func TestReplaySessionTable_Encode(t *testing.T) {

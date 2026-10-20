@@ -65,7 +65,7 @@ func TestLokiReplayPagesStopAfterSessionLimit(t *testing.T) {
 	stop := func(page *loki.QueryResponse) bool {
 		return len(extractReplaySessionRows(page)) > 50
 	}
-	page, stopped, _, err := fetchLokiEventPagesUntilWithPageCap(t.Context(), &rangeLoki{dataset: dataset}, "uid", query, time.UnixMilli(0), time.UnixMilli(2000000), sessionLokiQueryTimeout, stop, 0)
+	page, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", query, time.UnixMilli(0), time.UnixMilli(2000000), sessionLokiQueryTimeout, stop, false)
 	require.NoError(t, err)
 	assert.True(t, stopped)
 	assert.Greater(t, len(extractReplaySessionRows(page)), 50)
@@ -76,15 +76,25 @@ func TestLokiReplayPagesStopAfterSessionLimit(t *testing.T) {
 	assert.Equal(t, "sess-1002", items[0].SessionID)
 }
 
-type cappedReplayLoki struct{ queries int }
+type multiPageReplayLoki struct {
+	queries   int
+	dataPages int
+}
 
-func (c *cappedReplayLoki) Query(_ context.Context, _ string, req loki.QueryRequest) (*loki.QueryResponse, error) {
+func (c *multiPageReplayLoki) Query(_ context.Context, _ string, req loki.QueryRequest) (*loki.QueryResponse, error) {
 	c.queries++
 	// The pager re-queries the earliest timestamp to preserve ties. Return just
-	// that boundary row; regular page requests get a full page with one session ID.
+	// that boundary row. Return 101 full data pages, followed by a short final
+	// page, to prove discovery drains past its former 100-page cap.
 	if req.End.Sub(req.Start) <= time.Millisecond {
 		return &loki.QueryResponse{Data: loki.QueryResultData{Result: []loki.StreamEntry{{Values: []loki.LogEntry{{
 			Timestamp: lokiUnixNanoMS(req.Start.UnixMilli()), Line: "session_id=session-1",
+		}}}}}}, nil
+	}
+	c.dataPages++
+	if c.dataPages > 101 {
+		return &loki.QueryResponse{Data: loki.QueryResultData{Result: []loki.StreamEntry{{Values: []loki.LogEntry{{
+			Timestamp: lokiUnixNanoMS(req.Start.UnixMilli()), Line: "session_id=session-final",
 		}}}}}}, nil
 	}
 	entries := make([]loki.LogEntry, lokiEventsPageSize)
@@ -95,22 +105,18 @@ func (c *cappedReplayLoki) Query(_ context.Context, _ string, req loki.QueryRequ
 	return &loki.QueryResponse{Data: loki.QueryResultData{Result: []loki.StreamEntry{{Values: entries}}}}, nil
 }
 
-func TestLokiReplayDiscoveryStopsAtSafetyCap(t *testing.T) {
-	client := &cappedReplayLoki{}
-	resp, stopped, capped, err := fetchLokiEventPagesUntilWithPageCap(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, replaySessionLimitStop(1000), replayLokiDiscoveryMaxPages)
+func TestLokiReplayDiscoveryDrainsPastFormerPageCap(t *testing.T) {
+	client := &multiPageReplayLoki{}
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, replaySessionLimitStop(0), true)
 	require.NoError(t, err)
 	assert.False(t, stopped)
-	assert.True(t, capped)
-	assert.Equal(t, replayLokiDiscoveryMaxPages*2, client.queries) // data page plus boundary check
-	assert.Equal(t, replayLokiSessionsSafetyCap, lokiEntryCount(resp))
+	assert.Equal(t, 102, client.dataPages)
+	assert.Equal(t, 203, client.queries) // 101 data pages plus boundary checks and one short final page
+	assert.Equal(t, 101*lokiEventsPageSize+1, lokiEntryCount(resp))
 	rows := extractReplaySessionRows(resp)
-	assert.Len(t, rows, 1, "the event safety cap may bind while the default session limit does not")
-	uncappedMeta := cmdio.PagedListMeta(len(rows), 1000, true, replayLokiSessionsSafetyCap)
-	assert.Zero(t, uncappedMeta.Cap, "PagedListMeta compares the supplied limit to the cap")
-	meta := cmdio.PagedListMeta(len(rows), 0, true, replayLokiSessionsSafetyCap)
-	require.NotNil(t, meta)
-	assert.True(t, meta.Truncated)
-	assert.Equal(t, replayLokiSessionsSafetyCap, meta.Cap)
+	assert.Len(t, rows, 2)
+	_, meta := cmdio.TruncateCompleteList(rows, 0)
+	assert.Nil(t, meta, "a fully drained time range is a complete result")
 }
 
 func TestLokiReplayPagerPassesOnlyNewPageToStopPredicate(t *testing.T) {
@@ -122,10 +128,10 @@ func TestLokiReplayPagerPassesOnlyNewPageToStopPredicate(t *testing.T) {
 		})
 	}
 	var pageSizes []int
-	_, stopped, _, err := fetchLokiEventPagesUntilWithPageCap(t.Context(), &rangeLoki{dataset: dataset}, "uid", `{kind="event"}`, time.UnixMilli(0), time.UnixMilli(3_000_000), sessionLokiQueryTimeout, func(page *loki.QueryResponse) bool {
+	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", `{kind="event"}`, time.UnixMilli(0), time.UnixMilli(3_000_000), sessionLokiQueryTimeout, func(page *loki.QueryResponse) bool {
 		pageSizes = append(pageSizes, lokiEntryCount(page))
 		return len(pageSizes) == 2
-	}, 0)
+	}, false)
 	require.NoError(t, err)
 	assert.True(t, stopped)
 	assert.Equal(t, []int{lokiEventsPageSize, lokiEventsPageSize}, pageSizes)
@@ -145,11 +151,10 @@ func TestReplaySessionLimitStopCountsDistinctSessionsAcrossPages(t *testing.T) {
 }
 
 func TestLokiReplayDiscoveryQueryTimesOut(t *testing.T) {
-	resp, stopped, capped, err := fetchLokiEventPagesUntilWithPageCap(t.Context(), hangLoki{}, "uid", `{kind="event"}`, time.Unix(1, 0), time.Unix(2, 0), 20*time.Millisecond, nil, 0)
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), hangLoki{}, "uid", `{kind="event"}`, time.Unix(1, 0), time.Unix(2, 0), 20*time.Millisecond, nil, false)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Nil(t, resp)
 	assert.False(t, stopped)
-	assert.False(t, capped)
 	wrapped := wrapLokiReplayDiscoveryErr(err)
 	assert.Contains(t, wrapped.Error(), "scan did not finish; this is not an empty result")
 	assert.Contains(t, wrapped.Error(), "narrower --from/--to")
@@ -170,11 +175,10 @@ func TestLokiReplayPagerPreservesExistingSessionDumpBehavior(t *testing.T) {
 	resp, err := fetchLokiEventPages(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second)
 	require.NoError(t, err)
 	assert.Equal(t, lokiEventsPageSize, lokiEntryCount(resp))
-	resp, stopped, capped, err := fetchLokiEventPagesUntilWithPageCap(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, func(*loki.QueryResponse) bool { return false }, 0)
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, func(*loki.QueryResponse) bool { return false }, true)
 	require.ErrorContains(t, err, "no valid timestamp")
 	assert.Nil(t, resp)
 	assert.False(t, stopped)
-	assert.False(t, capped)
 }
 
 func TestPinotReplayStartsQueryUsesSessionFetcherTable(t *testing.T) {
@@ -231,11 +235,15 @@ type replayPinotChangingPages struct {
 }
 
 func (p *replayPinotChangingPages) Query(_ context.Context, _ string, req pinot.QueryRequest) (*querysql.QueryResponse, error) {
+	page := len(p.offsets)
 	expectedOffset := len(p.offsets) * pinotJourneyPageSize
 	if !strings.Contains(req.RawSQL, fmt.Sprintf("OFFSET %d", expectedOffset)) {
 		return nil, fmt.Errorf("unexpected Pinot page offset: want %d in %q", expectedOffset, req.RawSQL)
 	}
 	p.offsets = append(p.offsets, expectedOffset)
+	if page == pinotJourneyMaxPages+1 {
+		return replayPinotRowsFrom(expectedOffset, 1), nil
+	}
 	return replayPinotRowsFrom(expectedOffset, pinotJourneyPageSize), nil
 }
 
@@ -277,17 +285,13 @@ func TestPinotReplaySessionPagerRejectsRepeatedPage(t *testing.T) {
 	require.ErrorContains(t, err, "repeated without new sessions")
 }
 
-func TestPinotReplaySessionPagerStopsAtPageLimit(t *testing.T) {
+func TestPinotReplaySessionPagerDrainsPastFormerPageLimit(t *testing.T) {
 	client := &replayPinotChangingPages{}
 	rows, meta, err := fetchPinotReplaySessions(t.Context(), client, "uid", "66", "https://example.grafana.net", time.Unix(1, 0), time.Unix(2, 0), 0)
 	require.NoError(t, err)
-	assert.Len(t, rows, pinotReplaySessionsSafetyCap)
-	require.NotNil(t, meta)
-	assert.Equal(t, pinotReplaySessionsSafetyCap, meta.Cap)
-	assert.Equal(t, pinotReplaySessionsSafetyCap, meta.Returned)
-	assert.True(t, meta.Truncated)
-	assert.Empty(t, meta.Continue)
-	require.Len(t, client.offsets, pinotJourneyMaxPages)
+	assert.Len(t, rows, (pinotJourneyMaxPages+1)*pinotJourneyPageSize+1)
+	assert.Nil(t, meta)
+	require.Len(t, client.offsets, pinotJourneyMaxPages+2)
 	for page, offset := range client.offsets {
 		assert.Equal(t, page*pinotJourneyPageSize, offset)
 	}
