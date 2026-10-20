@@ -214,7 +214,7 @@ func writeReplayRecordingHeader(out io.Writer, recordingID string, outputFormat 
 		return err
 	}
 	if outputFormat == "yaml" {
-		_, err = fmt.Fprintf(out, "  - id: %s\n    events: [", idJSON)
+		_, err = fmt.Fprintf(out, "  - id: %s\n    events:\n", idJSON)
 		return err
 	}
 	if !first {
@@ -238,34 +238,24 @@ func writeReplayEvent(out io.Writer, encoder *json.Encoder, event RRWebEvent, ou
 		}
 		return nil
 	}
-	prefix := ",\n      "
-	if first {
-		prefix = "\n      "
-	}
-	if _, err := io.WriteString(out, prefix); err != nil {
+	// JSON values are valid YAML 1.2 flow values. Indent each event as a block
+	// sequence item so the file remains valid YAML without buffering the bundle.
+	if _, err := io.WriteString(out, "      - "); err != nil {
 		return err
 	}
-	var data strings.Builder
-	yamlEncoder := json.NewEncoder(&data)
-	yamlEncoder.SetEscapeHTML(false)
-	if err := yamlEncoder.Encode(event); err != nil {
+	if err := encoder.Encode(event); err != nil {
 		return fmt.Errorf("encoding replay event: %w", err)
-	}
-	encoded := strings.TrimSuffix(data.String(), "\n")
-	if _, err := io.WriteString(out, encoded); err != nil {
-		return err
 	}
 	return nil
 }
 
 func writeReplayRecordingFooter(out io.Writer, outputFormat string, eventCount int) error {
 	if outputFormat == "yaml" {
-		if eventCount > 0 {
-			_, err := io.WriteString(out, "\n    ]\n")
+		if eventCount == 0 {
+			_, err := io.WriteString(out, "      []\n")
 			return err
 		}
-		_, err := io.WriteString(out, "]\n")
-		return err
+		return nil
 	}
 	_, err := io.WriteString(out, "]}")
 	return err

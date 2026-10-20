@@ -178,6 +178,7 @@ func TestSessionsGetReplayWritesYAMLEvents(t *testing.T) {
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"href":"/?a=1&b=<x>"`)
+	assert.Contains(t, string(data), "    events:\n      - ")
 	var bundle struct {
 		AppID      string `json:"app_id"`
 		SessionID  string `json:"session_id"`

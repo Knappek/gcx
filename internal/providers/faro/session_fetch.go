@@ -323,7 +323,7 @@ func fetchLokiEventsByKind(ctx context.Context, client lokiQuerier, uid string, 
 	results := make([]*loki.QueryResponse, len(kinds))
 	for i, kind := range kinds {
 		g.Go(func() error {
-			resp, _, err := fetchLokiEventPagesUntil(gctx, client, uid, lokiEventsQueryForKind(p, kind), start, end, timeout, nil, false, nil)
+			resp, _, err := fetchLokiEventPagesUntil(gctx, client, uid, lokiEventsQueryForKind(p, kind), start, end, timeout, nil, nil)
 			if err != nil {
 				return fmt.Errorf("loki %s query failed: %w", kind, err)
 			}
@@ -344,16 +344,13 @@ func fetchLokiEventsByKind(ctx context.Context, client lokiQuerier, uid string, 
 // fetchLokiEventPagesUntil scans backward through the requested time range,
 // optionally stopping when stop reports that the caller has enough results.
 // stop is checked only for full pages; a short page proves the range is drained.
-// strictTimestamps makes a full page without a usable timestamp an error.
-// Event exports retain their previous partial-result behavior in that case.
-func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration, stop func() bool, strictTimestamps bool, reduce func(*loki.QueryResponse)) (*loki.QueryResponse, bool, error) {
+func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, query string, start, end time.Time, timeout time.Duration, stop func() bool, reduce func(*loki.QueryResponse)) (*loki.QueryResponse, bool, error) {
 	// Discovery supplies reduce and retains only its summary. Event exports
 	// omit reduce and keep the merged stream.
 	var merged *loki.QueryResponse
 	if reduce == nil {
 		merged = &loki.QueryResponse{Data: loki.QueryResultData{ResultType: "streams"}}
 	}
-	seen := make(map[[sha256.Size]byte]struct{})
 	cursor := end
 	for cursor.After(start) {
 		resp, err := queryLoki(ctx, client, uid, loki.QueryRequest{
@@ -366,6 +363,9 @@ func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, quer
 			return nil, false, fmt.Errorf("loki events query failed: %w", err)
 		}
 		n := lokiEntryCount(resp)
+		// Only this page and its timestamp bucket can overlap. Keeping older
+		// fingerprints would grow with the entire scan without improving de-duplication.
+		seen := make(map[[sha256.Size]byte]struct{}, n)
 		page := &loki.QueryResponse{Data: loki.QueryResultData{ResultType: "streams"}}
 		appendLokiEvents(page, resp)
 		recordLokiFingerprints(resp, seen)
@@ -375,10 +375,6 @@ func fetchLokiEventPagesUntil(ctx context.Context, client lokiQuerier, uid, quer
 		}
 		earliest, ok := minLokiTime(resp)
 		if !ok {
-			if !strictTimestamps {
-				consumeLokiPage(merged, page, reduce)
-				break
-			}
 			return nil, false, errors.New("loki events: full page has no valid timestamp; result may be truncated")
 		}
 		// Refetch the earliest instant so leftover rows that share that

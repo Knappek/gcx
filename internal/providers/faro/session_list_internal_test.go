@@ -66,7 +66,7 @@ func TestLokiReplayPagesStopAfterSessionLimit(t *testing.T) {
 	stop := func() bool {
 		return len(accumulator.sessions) > 50
 	}
-	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", query, time.UnixMilli(0), time.UnixMilli(2000000), sessionLokiQueryTimeout, stop, false, accumulator.addPage)
+	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", query, time.UnixMilli(0), time.UnixMilli(2000000), sessionLokiQueryTimeout, stop, accumulator.addPage)
 	require.NoError(t, err)
 	assert.True(t, stopped)
 	rows := accumulator.rows()
@@ -110,7 +110,7 @@ func (c *multiPageReplayLoki) Query(_ context.Context, _ string, req loki.QueryR
 func TestLokiReplayDiscoveryDrainsPastFormerPageCap(t *testing.T) {
 	client := &multiPageReplayLoki{}
 	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
-	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, func() bool { return false }, true, accumulator.addPage)
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), client, "uid", `{kind="event"}`, time.Unix(0, 0), time.Unix(1_000_000, 0), sessionLokiQueryTimeout, func() bool { return false }, accumulator.addPage)
 	require.NoError(t, err)
 	assert.False(t, stopped)
 	assert.Equal(t, 102, client.dataPages)
@@ -130,7 +130,7 @@ func TestLokiReplayDiscoveryReportsObservedTotalAfterShortPage(t *testing.T) {
 	}
 	accumulator := replaySessionAccumulator{sessions: make(map[string]replaySessionInfo)}
 	stop := func() bool { return len(accumulator.sessions) > 2 }
-	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", `{kind="event"}`, time.UnixMilli(0), time.UnixMilli(10_000), sessionLokiQueryTimeout, stop, true, accumulator.addPage)
+	_, stopped, err := fetchLokiEventPagesUntil(t.Context(), &rangeLoki{dataset: dataset}, "uid", `{kind="event"}`, time.UnixMilli(0), time.UnixMilli(10_000), sessionLokiQueryTimeout, stop, accumulator.addPage)
 	require.NoError(t, err)
 	assert.False(t, stopped, "a short page means the selected range was drained")
 	rows, meta := cmdio.TruncateCompleteList(accumulator.rows(), 2)
@@ -143,7 +143,7 @@ func TestLokiReplayDiscoveryReportsObservedTotalAfterShortPage(t *testing.T) {
 }
 
 func TestLokiReplayDiscoveryQueryTimesOut(t *testing.T) {
-	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), hangLoki{}, "uid", `{kind="event"}`, time.Unix(1, 0), time.Unix(2, 0), 20*time.Millisecond, nil, false, nil)
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), hangLoki{}, "uid", `{kind="event"}`, time.Unix(1, 0), time.Unix(2, 0), 20*time.Millisecond, nil, nil)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Nil(t, resp)
 	assert.False(t, stopped)
@@ -162,12 +162,9 @@ func (invalidTimestampLoki) Query(_ context.Context, _ string, _ loki.QueryReque
 	return &loki.QueryResponse{Data: loki.QueryResultData{Result: []loki.StreamEntry{{Values: entries}}}}, nil
 }
 
-func TestLokiReplayPagerPreservesExistingSessionDumpBehavior(t *testing.T) {
+func TestLokiReplayPagerRejectsFullPageWithoutTimestamps(t *testing.T) {
 	start, end := time.Unix(1, 0), time.Unix(2, 0)
-	resp, _, err := fetchLokiEventPagesUntil(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, nil, false, nil)
-	require.NoError(t, err)
-	assert.Equal(t, lokiEventsPageSize, lokiEntryCount(resp))
-	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, func() bool { return false }, true, nil)
+	resp, stopped, err := fetchLokiEventPagesUntil(t.Context(), invalidTimestampLoki{}, "uid", `{kind="event"}`, start, end, time.Second, func() bool { return false }, nil)
 	require.ErrorContains(t, err, "no valid timestamp")
 	assert.Nil(t, resp)
 	assert.False(t, stopped)

@@ -203,7 +203,7 @@ func queryLokiReplaySessions(ctx context.Context, cfg config.NamespacedRESTConfi
 	stop := func() bool {
 		return limit > 0 && len(accumulator.sessions) > limit
 	}
-	_, stopped, err := fetchLokiEventPagesUntil(ctx, client, uid, lokiReplayDiscoveryQuery(appID), start, end, sessionLokiQueryTimeout, stop, true, accumulator.addPage)
+	_, stopped, err := fetchLokiEventPagesUntil(ctx, client, uid, lokiReplayDiscoveryQuery(appID), start, end, sessionLokiQueryTimeout, stop, accumulator.addPage)
 	if err != nil {
 		return nil, nil, wrapLokiReplayDiscoveryErr(err)
 	}
