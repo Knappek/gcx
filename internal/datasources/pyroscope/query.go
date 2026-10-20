@@ -399,6 +399,7 @@ link is built for it.`,
 				if err := os.WriteFile(dest, data, 0o600); err != nil {
 					return fmt.Errorf("writing pprof profile: %w", err)
 				}
+				warnPprofSkipsLinks(cmd, share, drilldown)
 				result := &pyroscope.PprofWriteResult{Path: dest}
 				// -o pprof is an artifact write: in agent mode the stdout
 				// confirmation is a JSON receipt, not a human table (shared
@@ -482,6 +483,13 @@ link is built for it.`,
 	drilldown.Setup(cmd.Flags(), "executed query", "Profiles Drilldown")
 
 	return cmd
+}
+
+// warnPprofSkipsLinks tells the user the link flags had no effect: -o pprof writes a file, not a query view.
+func warnPprofSkipsLinks(cmd *cobra.Command, share *dsquery.ExploreLinkOpts, drilldown *dsquery.DrilldownLinkOpts) {
+	if share.Enabled() || drilldown.Enabled() {
+		cmdio.Warning(cmd.ErrOrStderr(), "-o pprof writes a file, so no Explore or Profiles Drilldown link was built")
+	}
 }
 
 // isUUID checks whether s is a valid UUID (8-4-4-4-12 hex format).

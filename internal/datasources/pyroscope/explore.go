@@ -23,9 +23,7 @@ import (
 // chase an unverified fix. Revisit if it reproduces reliably.
 //
 // traceIDs has no field anywhere in that schema, so --trace-id has no
-// Explore-UI representation and is not part of this query object — the
-// Explore link is simply inaccurate for that one flag, same as it is today
-// for every other gcx datasource lacking an equivalent field.
+// Explore-UI representation; callers suppress the link when it is set.
 func QueryExploreURL(host string, query dsquery.ExploreQuery, profileType string, spanIDs, profileIDs, stacktraceSelector []string, maxNodes int64) string {
 	if strings.TrimSpace(host) == "" || query.DatasourceUID == "" || strings.TrimSpace(query.Expr) == "" || profileType == "" {
 		return ""

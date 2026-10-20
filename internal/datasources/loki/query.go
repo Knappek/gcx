@@ -162,7 +162,10 @@ backend's own line limits, so it can undercount a busy time range.`,
 				return resultErr
 			}
 
-			drilldownURL, _ := LogsDrilldownURL(cfg.GrafanaURL, datasourceUID, expr, start, end)
+			var drilldownURL string
+			if drilldown.Enabled() {
+				drilldownURL, _ = LogsDrilldownURL(cfg.GrafanaURL, datasourceUID, expr, start, end)
+			}
 			drilldownUnavailableMsg, drilldownFailedOpenMsg := dsquery.DrilldownMessages("query", "Logs Drilldown")
 			if err := dsquery.HandleDrilldownLinkWithExploreFallback(cmd, *drilldown, drilldownURL, drilldownUnavailableMsg, drilldownFailedOpenMsg,
 				*share, exploreURL, unavailableMsg, failedOpenMsg); err != nil {

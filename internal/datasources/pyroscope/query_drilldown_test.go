@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,6 +33,9 @@ func TestQueryCmd_ExploreAndDrilldownLinks(t *testing.T) {
 		case "/api/datasources/proxy/uid/pyro-uid/querier.v1.QuerierService/SelectMergeStacktraces":
 			w.Header().Set("Content-Type", "application/json")
 			_, err := w.Write([]byte(emptyFlamegraph))
+			assert.NoError(t, err)
+		case "/api/datasources/proxy/uid/pyro-uid/querier.v1.QuerierService/SelectMergeProfile":
+			_, err := w.Write([]byte("pprof-bytes"))
 			assert.NoError(t, err)
 		default:
 			t.Fatalf("unexpected request path: %s", r.URL.Path)
@@ -73,6 +77,15 @@ current-context: default
 		err := root.Execute()
 		return stdout.String(), stderr.String(), err
 	}
+
+	t.Run("pprof export warns that links are skipped", func(t *testing.T) {
+		dest := filepath.Join(t.TempDir(), "p.pb.gz")
+		_, stderr, err := exec(`{service_name="frontend"}`, "-o", "pprof", "--pprof-path", dest, "--since", "1h", "--drilldown-link")
+		require.NoError(t, err)
+		assert.Contains(t, stderr, "-o pprof writes a file, so no Explore or Profiles Drilldown link was built")
+		assert.NotContains(t, stderr, "Drilldown link: ")
+		assert.FileExists(t, dest)
+	})
 
 	t.Run("prints explore link", func(t *testing.T) {
 		_, stderr, err := exec(`{service_name="frontend"}`, "--share-link")
