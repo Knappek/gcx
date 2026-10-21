@@ -128,8 +128,21 @@ For more information, refer to [macOS Gatekeeper and killed: 9](#macos-gatekeepe
 
 ## Run `gcx` in a container
 
-Each release publishes a multi-arch (`linux/amd64`, `linux/arm64`) image to
-`ghcr.io/grafana/gcx`. The entrypoint is `gcx`:
+Each release publishes the same multi-arch (`linux/amd64`, `linux/arm64`) image
+to two registries:
+
+- `docker.io/grafana/gcx` (Docker Hub)
+- `ghcr.io/grafana/gcx` (GitHub Container Registry)
+
+Both carry identical tags and the same image digests. The entrypoint is `gcx`.
+
+From Docker Hub:
+
+```sh
+docker run --rm docker.io/grafana/gcx:latest --version
+```
+
+From GitHub Container Registry:
 
 ```sh
 docker run --rm ghcr.io/grafana/gcx:latest --version
