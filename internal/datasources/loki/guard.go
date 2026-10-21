@@ -63,7 +63,7 @@ func (g *queryGuard) check(ctx context.Context, datasourceUID, expr string, isRa
 
 	policy, fallbackReason := g.policy.fetch(ctx, g.now())
 	if fallbackReason != "" {
-		log.Warn("Loki query policy unavailable, using the built-in default (enforce, 10 GiB, 24h)", slog.String("reason", fallbackReason))
+		log.Warn("Loki query policy unavailable, using the built-in default (enforce, 50 GiB, 24h)", slog.String("reason", fallbackReason))
 	}
 	if policy.Mode == modeOff {
 		log.Info("Loki query guardrail is off for this tenant", slog.String("policy_source", policy.Source))

@@ -62,7 +62,7 @@ func TestPolicySource_Fetch(t *testing.T) {
 			p, reason := policySource{url: srv.URL, client: srv.Client()}.fetch(t.Context(), now)
 			assert.NotEmpty(t, reason)
 			assert.Equal(t, defaultQueryPolicy(), p)
-			assert.Equal(t, queryPolicy{Mode: modeEnforce, MaxBytes: 10 << 30, MaxRangeSeconds: 86400, Source: "default"}, p)
+			assert.Equal(t, queryPolicy{Mode: modeEnforce, MaxBytes: 50 << 30, MaxRangeSeconds: 86400, Source: "default"}, p)
 		})
 	}
 

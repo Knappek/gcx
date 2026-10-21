@@ -61,9 +61,14 @@ type queryPolicy struct {
 	Source string `json:"source"`
 }
 
+// defaultMaxBytes is the scan budget used when the tenant policy cannot be
+// fetched: generous enough not to block ordinary queries, low enough to stop a
+// catch-all selector over a long window.
+const defaultMaxBytes = 50 << 30 // 50 GiB
+
 // defaultQueryPolicy is used when the tenant policy cannot be fetched.
 func defaultQueryPolicy() queryPolicy {
-	return queryPolicy{Mode: modeEnforce, MaxBytes: 10 << 30, MaxRangeSeconds: 24 * 60 * 60, Source: "default"}
+	return queryPolicy{Mode: modeEnforce, MaxBytes: defaultMaxBytes, MaxRangeSeconds: 24 * 60 * 60, Source: "default"}
 }
 
 func (p queryPolicy) validate() error {
