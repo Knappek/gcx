@@ -31,7 +31,7 @@ cards:
       description: Authenticate `gcx`.
       href: authenticate/
       height: 24
-- title: Configuration
+    - title: Configuration
       description: Configure `gcx` with the configuration file or using environment variables.
       href: configuration/
       height: 24
