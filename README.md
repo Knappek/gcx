@@ -21,22 +21,15 @@ With `gcx` you don't guess, but check the actual data. You can query production,
 
 ## AI tools: Choose between `gcx`, Grafana MCP, and Grafana Assistant
 
-`gcx` gives you and your coding agents access to Grafana through shell commands. Grafana MCP gives AI clients access through Model Context Protocol tools. Grafana Assistant is the Grafana AI agent, built into Grafana. 
+Grafana offers you a few AI tools to work with.
 
-Use **`gcx`** for terminal work, scripts, GitOps, and CI/CD pipelines. It [supports Grafana OSS, Enterprise, and Cloud](#compatibility-and-availability) and has [dedicated commands for Grafana Cloud products](#supported-grafana-cloud-products).
+**`gcx`** gives you and your coding agents access to Grafana through shell commands. Grafana MCP gives AI clients access through Model Context Protocol tools. Grafana Assistant is the Grafana AI agent, built into Grafana. Use `gcx` for terminal work, scripts, GitOps, and CI/CD pipelines. It [supports Grafana OSS, Enterprise, and Cloud](#compatibility-and-availability) and has [dedicated commands for Grafana Cloud products](#supported-grafana-cloud-products).
 
-Use **Grafana MCP** when your AI client needs an MCP connection, including clients without shell access. Choose between:
-
-- **Grafana Cloud MCP:** Grafana hosts the server. You authorize access through
-  your browser with OAuth. For more information, see the
-  [Cloud MCP documentation](https://grafana.com/docs/grafana-cloud/ai-tools/mcp-servers/cloud-mcp/).
-- **Open source Grafana MCP:** You run and configure the server. It connects to
-  Grafana Cloud or your own Grafana instance. For more information, see the
-  [open source MCP documentation](https://grafana.com/docs/grafana/latest/developer-resources/mcp/).
-
-If your coding agent supports both shell commands and MCP, start with `gcx` for these workflows. Choose MCP when a specific tool or its connection model better meets your needs.
+The **Grafana MCP** is a Model Context Protocol server that gives AI assistants and LLM clients access to your Grafana instance, including clients without shell access. Choose between the [Grafana Cloud MCP](https://grafana.com/docs/grafana-cloud/ai-tools/mcp-servers/cloud-mcp/)(Grafana hosts the server) or the [Grafana OSS MCP](https://grafana.com/docs/grafana/latest/developer-resources/mcp/)(You run and configure the server). 
 
 Finally, **Grafana Assistant** brings a purpose-built LLM into Grafana. Use it to troubleshoot issues, manage dashboards, and answer product questions in plain language. Some advanced features require the full Grafana Cloud feature set. In self-managed Grafana the Assistant app runs in your own deployment but connects to a Grafana Cloud Assistant backend, with a reduced feature set. Refer to the [Grafana Assistant](https://grafana.com/docs/grafana-cloud/platform/grafana-assistant/) documentation for an overview.
+
+> If your coding agent supports both shell commands and MCP, start with `gcx` for these workflows. Choose MCP when a specific tool or its connection model better meets your needs.
 
 ## Compatibility and availability
 
@@ -117,23 +110,21 @@ This toggle is experimental in 12.x, requires a restart, and Unified Alerting mu
 
 ### Install `gcx`
 
+> Refer to [Installation](/docs/sources/installation) for full details on how to install `gcx`.
+
 **Quick install (Linux/macOS):**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/grafana/gcx/main/scripts/install.sh | sh
 ```
 
-Downloads the latest release, verifies the SHA-256 checksum, and installs to
-`~/.local/bin`. Override the location with `GCX_INSTALL_DIR`:
+Downloads the latest release, verifies the SHA-256 checksum, and installs to `~/.local/bin`. Override the location with `GCX_INSTALL_DIR`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/grafana/gcx/main/scripts/install.sh | GCX_INSTALL_DIR=/usr/local/bin sh
 ```
 
-To upgrade, run the same command again, then check `gcx --version`. If the
-version does not change, you have a second `gcx` earlier in your `PATH` — run
-`which -a gcx` and see
-[The version does not change after an upgrade](docs/sources/installation.md#the-version-does-not-change-after-an-upgrade).
+To upgrade, run the same command again, then check `gcx --version`. If the version does not change, you have a second `gcx` earlier in your `PATH` — run `which -a gcx` and see [The version does not change after an upgrade](docs/sources/installation.md#the-version-does-not-change-after-an-upgrade).
 
 **Homebrew (macOS and Linux):**
 
@@ -150,21 +141,18 @@ To update to the latest version:
 brew update && brew upgrade gcx
 ```
 
-The Grafana tap also carries `gcx`. Use it if you want Homebrew to compile the
-binary on your machine:
+The Grafana tap also carries `gcx`. Use it if you want Homebrew to compile the binary on your machine:
 
 ```bash
 brew install grafana/grafana/gcx
 ```
 
-That build needs Homebrew's `go`, which Homebrew installs as a build
-dependency. The first install takes 30–60 seconds while Go fetches
+That build needs Homebrew's `go`, which Homebrew installs as a build dependency. The first install takes 30–60 seconds while Go fetches
 dependencies.
 
 **Pre-built binary (Linux/macOS/Windows):**
 
-Download the latest archive for your OS and architecture from the
-[releases page](https://github.com/grafana/gcx/releases/latest),
+Download the latest archive for your OS and architecture from the [releases page](https://github.com/grafana/gcx/releases/latest),
 extract it, and move the binary to your PATH:
 
 ```bash
@@ -212,16 +200,6 @@ gcx login
 
 Refer to [Authentication](/docs/sources/authentication) for the available paths and options to authenticate.
 
-```sh
-# For Grafana Cloud instances
-gcx login prod --server https://<your-cloud-instance>.grafana.net  # select oauth, then press Enter to skip cloud token selection
-
-# For self-hosted Grafana instances
-gcx login local --server http://localhost:3000 --token <token>
-```
-
-
-
 ## Use with your AI agent
 
 `gcx` is compatible with any AI agent. Agent mode uses known identity signals, including Codex and Gemini CLI. For tools without a native signal, set `GCX_AGENT_NAME` to a supported label. Refer to [agent detection and harness names](docs/design/environment-variables.md#agent-mode-variables) for details.
@@ -268,7 +246,7 @@ Note that `update`:
 - Refreshes skills but doesn't add newly bundled skills. After upgrading `gcx`, install a new skill by name. 
 - Warns about deprecated and retired skills, but never deletes retired files or installs replacements automatically. 
 
-To refresh existing skills and add every newly bundled one, run 
+To refresh existing skills and add every newly bundled one, run: 
 
 ```sh
 gcx agent skills update`
@@ -284,15 +262,15 @@ Investigation, fix, instrumentation, monitoring — without the developer ever l
 
 Here's how your coding agent with access to production investigates alerts with Grafana Assistant and `gcx`: 
 
-**1. An alert fires** — P95 latency on the checkout service crosses the SLO threshold.
+**1. An alert fires:** For example, a P95 latency on the checkout service crosses the SLO threshold.
 
-**2. The Assistant investigates** — Your coding agent calls the Grafana Assistant through gcx. The Assistant has already started its investigation — it traces the issue to a missing index on `customer_id` causing full table scans under load.
+**2. The Assistant investigates:** Your coding agent calls the Grafana Assistant through `gcx`. The Assistant has already started its investigation, and is able to trace the issue to a missing index on `customer_id` causing full table scans under load.
 
-**3. It fixes the issue** — Drafts the migration, adds the index.
+**3. It fixes the issue:** Drafts the migration, and adds the index.
 
-**4. It prevents recurrence** — Instruments the service with OpenTelemetry spans, sets up a Synthetic Monitoring check on the checkout flow, and creates an alert rule on query duration.
+**4. It prevents recurrence:** Instruments the service with OpenTelemetry spans, sets up a Synthetic Monitoring check on the checkout flow, and creates an alert rule on query duration.
 
-**5. It ships** — Opens a PR, tests pass, deploys to production. The alert resolves.
+**5. It ships!** Tha Assistant opens a PR, tests pass, deploys to production. The alert resolves.
 
 ```sh
 $ gcx assistant investigations list
@@ -305,13 +283,13 @@ def2  Memory leak in payment-svc                resolved   1h ago
 
 While the alerting example uses the Grafana Assistant, which requires Grafana Cloud, these workflows work on any Grafana setting:
 
-- **Resource GitOps** — Pull writable resource types to local files, let your agent edit them, push back to Grafana (`gcx resources pull` / `gcx resources push`)
-- **Explore your data** — Discover datasources, metrics, labels, and log streams before writing queries (`gcx datasources list`, `gcx metrics labels`)
-- **Bring Assistant context into your agent** — Read a conversation by ID or a shared Grafana Assistant URL, including AI SDK main-thread transcripts (`gcx assistant conversation get <id-or-url> -o json`)
-- **Look up product docs** — Search and read Grafana documentation from the terminal (`gcx docs search`, `gcx docs get`)
-- **SLO management** — Create, monitor, and investigate SLOs from your terminal (`gcx slo definitions list`, `gcx slo reports list`)
-- **Onboarding & setup** — Instrument a Kubernetes cluster and configure Grafana Cloud products (`gcx instrumentation setup`)
-- **Observability as Code** — Scaffold a project, import existing dashboards as Go code, lint, and deploy (`gcx dev scaffold`, `gcx dev import`)
+- **Resource GitOps**. Pull writable resource types to local files, let your agent edit them, push back to Grafana (`gcx resources pull` / `gcx resources push`).
+- **Explore your data**. Discover datasources, metrics, labels, and log streams before writing queries (`gcx datasources list`, `gcx metrics labels`).
+- **Bring Assistant context into your agent**. Read a conversation by ID or a shared Grafana Assistant URL, including AI SDK main-thread transcripts (`gcx assistant conversation get <id-or-url> -o json`).
+- **Look up product docs**. Search and read Grafana documentation from the terminal (`gcx docs search`, `gcx docs get`).
+- **SLO management**. Create, monitor, and investigate SLOs from your terminal (`gcx slo definitions list`, `gcx slo reports list`).
+- **Onboarding & setup**. Instrument a Kubernetes cluster and configure Grafana Cloud products (`gcx instrumentation setup`).
+- **Observability as Code**. Scaffold a project, import existing dashboards as Go code, lint, and deploy (`gcx dev scaffold`, `gcx dev import`).
 
 ## What can I do with gcx?
 
@@ -449,9 +427,7 @@ gcx resources push -p ./resources
 
 `gcx push` is idempotent, so running it multiple times produces the same result. Folders are automatically pushed before dashboards to satisfy dependencies.
 
-Updates preserve the existing `kubectl` manager identity, including identities from
-`grafanactl` and older `gcx` releases. New resources use the stable identity `gcx`.
-Refer to [manager metadata](docs/architecture/resource-model.md#manager-metadata).
+Updates preserve the existing `kubectl` manager identity, including identities from `grafanactl` and older `gcx` releases. New resources use the stable identity `gcx`. Refer to [manager metadata](docs/architecture/resource-model.md#manager-metadata).
 
 > **gcx resources push/pull vs Git Sync:** [Git Sync](https://grafana.com/docs/grafana/latest/as-code/observability-as-code/git-sync/) provides bi-directional sync between your git repo and Grafana for dashboards. `gcx resources push/pull` enables users to create their own as-code resource synchronisation workflows. `gcx resources push/pull` also works with all resources available in `gcx resources get`, not just dashboards.
 
@@ -522,9 +498,7 @@ Pulled Watcher manifests can be pushed back unchanged. Applying configuration pr
 
 ## Raw API access
 
-For anything not covered by built-in commands, use the API passthrough:
-
-For example, to work with dashboards:
+For anything not covered by built-in commands, use the API passthrough. For example, to work with dashboards:
 
 ```bash
 # Review who can access a dashboard
@@ -551,6 +525,7 @@ To find out more about `gcx` usage statistics, or for information on how to disa
 | Topic | Description |
 |-------|-------------|
 | [Installation](docs/sources/installation.md) | Install gcx on macOS, Linux, and Windows |
+| [Authentication](docs/sources/authentication.md) | Authenticate `gcx` |
 | [Configuration](docs/sources/configuration.md) | Contexts, authentication, environment variables |
 | [Dashboards as Code](docs/sources/guides/dashboards-as-code.md) | Dashboard-as-code workflow with live dev server |
 | [Managing Resources](docs/sources/guides/manage-resources.md) | Get, push, pull, delete, edit, validate |
