@@ -48,7 +48,7 @@ require (
 	github.com/gofrs/flock v0.13.1
 	github.com/google/uuid v1.6.0
 	github.com/grafana/mcp-doc-server v1.0.0
-	github.com/grafana/mcp-grafana/lokiguard v0.0.0 // POC: local module, real PR waits for a lokiguard/v0.1.0 tag
+	github.com/grafana/mcp-grafana/lokiguard v0.1.0
 	github.com/grafana/otel-checker v0.3.3
 	github.com/itchyny/gojq v0.12.19
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
@@ -191,6 +191,3 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
-
-// POC: local path replace, not for merge.
-replace github.com/grafana/mcp-grafana/lokiguard => ../mcp-grafana/lokiguard
