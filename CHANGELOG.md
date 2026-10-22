@@ -1,3 +1,10 @@
+## Unreleased
+
+- Anonymous usage statistics for `gcx signup` now record the last step it
+  reached (`signup_stage`), and a failed OAuth token exchange in `gcx login` or
+  `gcx signup` reports its HTTP status. The one-time telemetry notice is shown
+  again to disclose the new field.
+
 ## v1.7.1 (2026-10-21)
 
 - Build release binaries with Go 1.26.10 and update `golang.org/x/net` to
