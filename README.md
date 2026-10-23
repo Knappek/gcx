@@ -127,18 +127,6 @@ That build needs Homebrew's `go`, which Homebrew installs as a build
 dependency. The first install takes 30–60 seconds while Go fetches
 dependencies.
 
-**asdf:**
-
-```bash
-asdf plugin add gcx https://github.com/grafana/asdf-gcx.git
-asdf install gcx latest
-asdf set -u gcx latest
-```
-
-The [asdf-gcx](https://github.com/grafana/asdf-gcx) plugin installs the prebuilt
-release binaries for macOS and Linux. On asdf releases before 0.16, use
-`asdf global gcx latest` instead of `asdf set -u gcx latest`.
-
 **Pre-built binary (Linux/macOS/Windows):**
 
 Download the latest archive for your OS and architecture from the
